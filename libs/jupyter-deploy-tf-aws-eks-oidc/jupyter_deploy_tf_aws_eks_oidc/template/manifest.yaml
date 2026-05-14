@@ -96,6 +96,48 @@ commands:
   - result-name: secret-value
     source: result
     source-key: '[0].SecretString'
+- cmd: cluster.login
+  sequence:
+  - api-name: aws.eks.update-kubeconfig
+    arguments:
+    - api-attribute: cluster_name
+      source: output
+      source-key: cluster_name
+  results:
+  - result-name: cluster.login.output
+    source: result
+    source-key: '[0].Output'
+- cmd: cluster.status
+  sequence:
+  - api-name: aws.eks.describe-cluster
+    arguments:
+    - api-attribute: cluster_name
+      source: output
+      source-key: cluster_name
+  results:
+  - result-name: cluster.status
+    source: result
+    source-key: '[0].Status'
+- cmd: cluster.show
+  sequence:
+  - api-name: aws.eks.describe-cluster
+    arguments:
+    - api-attribute: cluster_name
+      source: output
+      source-key: cluster_name
+  results:
+  - result-name: cluster.show.name
+    source: result
+    source-key: '[0].ClusterName'
+  - result-name: cluster.show.status
+    source: result
+    source-key: '[0].Status'
+  - result-name: cluster.show.endpoint
+    source: result
+    source-key: '[0].Endpoint'
+  - result-name: cluster.show.version
+    source: result
+    source-key: '[0].Version'
 - cmd: host.list
   sequence:
   - api-name: k8s.core.list-nodes

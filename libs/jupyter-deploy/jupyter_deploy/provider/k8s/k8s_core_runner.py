@@ -1,10 +1,12 @@
+import json
 from enum import Enum
 
 from kubernetes import client
 
+from jupyter_deploy import cmd_utils
 from jupyter_deploy.api.k8s import core as k8s_core
 from jupyter_deploy.engine.supervised_execution import DisplayManager
-from jupyter_deploy.exceptions import InstructionNotFoundError
+from jupyter_deploy.exceptions import InstructionNotFoundError, InteractiveSessionError, InteractiveSessionTimeoutError
 from jupyter_deploy.provider.instruction_runner import InstructionRunner
 from jupyter_deploy.provider.resolved_argdefs import (
     ResolvedInstructionArgument,
@@ -13,6 +15,7 @@ from jupyter_deploy.provider.resolved_argdefs import (
     retrieve_optional_arg,
 )
 from jupyter_deploy.provider.resolved_resultdefs import (
+    ListStrResolvedInstructionResult,
     ResolvedInstructionResult,
     StrResolvedInstructionResult,
 )
@@ -25,14 +28,21 @@ class K8sCoreInstruction(str, Enum):
     GET_NODE = "get-node"
     LIST_PODS = "list-pods"
     GET_POD = "get-pod"
+    DEPLOYMENT_LOGS = "deployment-logs"
+    EXEC_POD = "exec-pod"
+    EXEC_POD_INTERACTIVE = "exec-pod-interactive"
 
 
 class K8sCoreRunner(InstructionRunner):
     """Runner class for Kubernetes Core API instructions."""
 
-    def __init__(self, display_manager: DisplayManager, api_client: client.ApiClient) -> None:
+    def __init__(
+        self, display_manager: DisplayManager, api_client: client.ApiClient, kubeconfig_path: str | None = None
+    ) -> None:
         super().__init__(display_manager)
         self.core_api = client.CoreV1Api(api_client)
+        self.apps_api = client.AppsV1Api(api_client)
+        self._kubeconfig_path = kubeconfig_path
 
     def _list_nodes(
         self, resolved_arguments: dict[str, ResolvedInstructionArgument]
@@ -53,7 +63,7 @@ class K8sCoreRunner(InstructionRunner):
 
         node_names = [node.name for node in nodes]
         return {
-            "NodeNames": StrResolvedInstructionResult(result_name="NodeNames", value=",".join(node_names)),
+            "NodeNames": ListStrResolvedInstructionResult(result_name="NodeNames", value=node_names),
             "NextToken": StrResolvedInstructionResult(result_name="NextToken", value=next_token or ""),
         }
 
@@ -68,6 +78,7 @@ class K8sCoreRunner(InstructionRunner):
         return {
             "Name": StrResolvedInstructionResult(result_name="Name", value=node.name),
             "Status": StrResolvedInstructionResult(result_name="Status", value=node.status.value),
+            "Resource": StrResolvedInstructionResult(result_name="Resource", value=json.dumps(node.resource)),
         }
 
     def _list_pods(
@@ -109,6 +120,114 @@ class K8sCoreRunner(InstructionRunner):
             "Phase": StrResolvedInstructionResult(result_name="Phase", value=pod.phase.value),
         }
 
+    def _deployment_logs(
+        self, resolved_arguments: dict[str, ResolvedInstructionArgument]
+    ) -> dict[str, ResolvedInstructionResult]:
+        name_arg = require_arg(resolved_arguments, "name", StrResolvedInstructionArgument)
+        scope_arg = require_arg(resolved_arguments, "scope", StrResolvedInstructionArgument)
+        container_arg = retrieve_optional_arg(resolved_arguments, "container", StrResolvedInstructionArgument, "")
+        tail_lines_arg = retrieve_optional_arg(resolved_arguments, "tail_lines", StrResolvedInstructionArgument, "")
+
+        container = container_arg.value if container_arg.value and container_arg.value != "default" else None
+        self.display_manager.info(f"Getting logs for deployment {name_arg.value} in namespace: {scope_arg.value}")
+        logs = k8s_core.get_deployment_logs(
+            self.core_api,
+            self.apps_api,
+            name=name_arg.value,
+            namespace=scope_arg.value,
+            container=container,
+            tail_lines=int(tail_lines_arg.value) if tail_lines_arg.value else None,
+        )
+
+        return {
+            "Logs": StrResolvedInstructionResult(result_name="Logs", value=logs),
+        }
+
+    def _resolve_pod_name(self, deployment_name: str, namespace: str) -> str:
+        deployment = self.apps_api.read_namespaced_deployment(name=deployment_name, namespace=namespace)
+        match_labels = deployment.spec.selector.match_labels or {}
+        label_selector = ",".join(f"{k}={v}" for k, v in match_labels.items())
+        if not label_selector:
+            raise ValueError(f"Deployment {deployment_name} has no selector labels")
+        pods, _ = k8s_core.list_pods(self.core_api, namespace=namespace, label_selector=label_selector, limit=1)
+        if not pods:
+            raise ValueError(f"No pods found for deployment {deployment_name} in namespace {namespace}")
+        return pods[0].name
+
+    def _exec_pod(
+        self, resolved_arguments: dict[str, ResolvedInstructionArgument]
+    ) -> dict[str, ResolvedInstructionResult]:
+        scope_arg = require_arg(resolved_arguments, "scope", StrResolvedInstructionArgument)
+        command_arg = require_arg(resolved_arguments, "command", StrResolvedInstructionArgument)
+        container_arg = retrieve_optional_arg(resolved_arguments, "container", StrResolvedInstructionArgument, "")
+        deployment_name_arg = retrieve_optional_arg(
+            resolved_arguments, "deployment_name", StrResolvedInstructionArgument, ""
+        )
+        name_arg = retrieve_optional_arg(resolved_arguments, "name", StrResolvedInstructionArgument, "")
+
+        if deployment_name_arg.value:
+            pod_name = self._resolve_pod_name(deployment_name_arg.value, scope_arg.value)
+        elif name_arg.value:
+            pod_name = name_arg.value
+        else:
+            raise ValueError("Either 'name' (pod name) or 'deployment_name' must be provided")
+
+        container = container_arg.value if container_arg.value and container_arg.value != "default" else None
+        command_parts = command_arg.value.split()
+        self.display_manager.info(f"Executing command on pod: {pod_name}")
+        result = k8s_core.exec_pod(
+            self.core_api,
+            name=pod_name,
+            namespace=scope_arg.value,
+            command=command_parts,
+            container=container,
+        )
+
+        return {
+            "Stdout": StrResolvedInstructionResult(result_name="Stdout", value=result.stdout),
+            "Stderr": StrResolvedInstructionResult(result_name="Stderr", value=result.stderr),
+            "ReturnCode": StrResolvedInstructionResult(result_name="ReturnCode", value=str(result.returncode)),
+        }
+
+    def _exec_pod_interactive(
+        self, resolved_arguments: dict[str, ResolvedInstructionArgument]
+    ) -> dict[str, ResolvedInstructionResult]:
+        scope_arg = require_arg(resolved_arguments, "scope", StrResolvedInstructionArgument)
+        command_arg = retrieve_optional_arg(resolved_arguments, "command", StrResolvedInstructionArgument, "/bin/bash")
+        container_arg = retrieve_optional_arg(resolved_arguments, "container", StrResolvedInstructionArgument, "")
+        deployment_name_arg = retrieve_optional_arg(
+            resolved_arguments, "deployment_name", StrResolvedInstructionArgument, ""
+        )
+        name_arg = retrieve_optional_arg(resolved_arguments, "name", StrResolvedInstructionArgument, "")
+
+        if deployment_name_arg.value:
+            pod_name = self._resolve_pod_name(deployment_name_arg.value, scope_arg.value)
+        elif name_arg.value:
+            pod_name = name_arg.value
+        else:
+            raise ValueError("Either 'name' (pod name) or 'deployment_name' must be provided")
+
+        container = container_arg.value if container_arg.value and container_arg.value != "default" else None
+
+        kubectl_cmd = ["kubectl", "exec", "-it", pod_name, "-n", scope_arg.value]
+        if self._kubeconfig_path:
+            kubectl_cmd.extend(["--kubeconfig", self._kubeconfig_path])
+        if container:
+            kubectl_cmd.extend(["-c", container])
+        kubectl_cmd.extend(["--", command_arg.value])
+
+        self.display_manager.hint("Type 'exit' to close the session.")
+        self.display_manager.stop_spinning()
+
+        retcode, timed_out = cmd_utils.run_cmd_and_pipe_to_terminal(kubectl_cmd)
+
+        if timed_out:
+            raise InteractiveSessionTimeoutError("kubectl exec session timed out")
+        if retcode:
+            raise InteractiveSessionError("kubectl exec session failed")
+
+        return {}
+
     def execute_instruction(
         self,
         instruction_name: str,
@@ -127,5 +246,11 @@ class K8sCoreRunner(InstructionRunner):
             return self._list_pods(resolved_arguments)
         elif instruction == K8sCoreInstruction.GET_POD:
             return self._get_pod(resolved_arguments)
+        elif instruction == K8sCoreInstruction.DEPLOYMENT_LOGS:
+            return self._deployment_logs(resolved_arguments)
+        elif instruction == K8sCoreInstruction.EXEC_POD:
+            return self._exec_pod(resolved_arguments)
+        elif instruction == K8sCoreInstruction.EXEC_POD_INTERACTIVE:
+            return self._exec_pod_interactive(resolved_arguments)
 
         raise InstructionNotFoundError(f"Unknown K8s core instruction: '{instruction_name}'")

@@ -1,7 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
-from kubernetes.client import CoreV1Api
+from kubernetes.client import ApiClient, AppsV1Api, CoreV1Api
+from kubernetes.stream import stream as k8s_stream
 
 
 class NodeConditionStatus(str, Enum):
@@ -22,6 +24,7 @@ class PodPhase(str, Enum):
 class NodeInfo:
     name: str
     status: NodeConditionStatus
+    resource: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -77,7 +80,8 @@ def list_nodes(
 def get_node(api: CoreV1Api, name: str) -> NodeInfo:
     node = api.read_node(name=name)
     node_name = node.metadata.name if node.metadata else ""
-    return NodeInfo(name=node_name, status=_parse_node_status(node))
+    resource: dict[str, Any] = ApiClient().sanitize_for_serialization(node)
+    return NodeInfo(name=node_name, status=_parse_node_status(node), resource=resource)
 
 
 def list_pods(
@@ -110,3 +114,71 @@ def get_pod(api: CoreV1Api, name: str, namespace: str) -> PodInfo:
     pod = api.read_namespaced_pod(name=name, namespace=namespace)
     pod_name = pod.metadata.name if pod.metadata else ""
     return PodInfo(name=pod_name, phase=_parse_pod_phase(pod))
+
+
+def get_deployment_logs(
+    core_api: CoreV1Api,
+    apps_api: AppsV1Api,
+    name: str,
+    namespace: str,
+    container: str | None = None,
+    tail_lines: int | None = None,
+) -> str:
+    deployment = apps_api.read_namespaced_deployment(name=name, namespace=namespace)
+    match_labels = deployment.spec.selector.match_labels or {}
+    label_selector = ",".join(f"{k}={v}" for k, v in match_labels.items())
+    if not label_selector:
+        return ""
+
+    pods = core_api.list_namespaced_pod(namespace=namespace, label_selector=label_selector)
+    if not pods.items:
+        return ""
+
+    pod_name = pods.items[0].metadata.name if pods.items[0].metadata else ""
+    if not pod_name:
+        return ""
+
+    kwargs: dict[str, str | int] = {"name": pod_name, "namespace": namespace}
+    if container:
+        kwargs["container"] = container
+    if tail_lines:
+        kwargs["tail_lines"] = tail_lines
+
+    result: str = core_api.read_namespaced_pod_log(**kwargs)
+    return result
+
+
+@dataclass(frozen=True)
+class ExecResult:
+    stdout: str
+    stderr: str
+    returncode: int
+
+
+def exec_pod(
+    api: CoreV1Api,
+    name: str,
+    namespace: str,
+    command: list[str],
+    container: str | None = None,
+) -> ExecResult:
+    kwargs: dict[str, object] = {
+        "name": name,
+        "namespace": namespace,
+        "command": command,
+        "stderr": True,
+        "stdin": False,
+        "stdout": True,
+        "tty": False,
+        "_preload_content": False,
+    }
+    if container:
+        kwargs["container"] = container
+
+    resp = k8s_stream(api.connect_get_namespaced_pod_exec, **kwargs)
+    resp.run_forever(timeout=60)
+
+    stdout = resp.read_stdout() or ""
+    stderr = resp.read_stderr() or ""
+    returncode = resp.returncode if hasattr(resp, "returncode") and resp.returncode is not None else 0
+    return ExecResult(stdout=stdout, stderr=stderr, returncode=returncode)

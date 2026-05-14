@@ -1,3 +1,4 @@
+import json
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict
@@ -75,8 +76,27 @@ def resolve_output_argdef(
     raise NotImplementedError(f"No resolved argument class for type: {type(outdef).__name__}")
 
 
+def _extract_json_path(value: str, path: str) -> str:
+    """Extract a value from a JSON string using a dot-separated path.
+
+    Raises:
+        KeyError if a path segment is not found.
+    """
+    obj = json.loads(value)
+    for segment in path.split("."):
+        if isinstance(obj, dict):
+            if segment not in obj:
+                raise KeyError(f"Key '{segment}' not found in JSON at path '{path}'")
+            obj = obj[segment]
+        else:
+            raise KeyError(f"Cannot traverse non-dict value at '{segment}' in path '{path}'")
+    if not isinstance(obj, str):
+        return json.dumps(obj)
+    return obj
+
+
 def resolve_result_argdef(
-    resultdefs: dict[str, ResolvedInstructionResult], arg_name: str, source_key: str
+    resultdefs: dict[str, ResolvedInstructionResult], arg_name: str, source_key: str, extract: str | None = None
 ) -> ResolvedInstructionArgument:
     """Instantiates the resolved argdef of the corresponding type.
 
@@ -89,7 +109,10 @@ def resolve_result_argdef(
         raise KeyError(f"Output name '{source_key}' not found in previous results: {list(resultdefs.keys())}")
     resultdef = resultdefs[source_key]
     if isinstance(resultdef, StrResolvedInstructionResult):
-        return StrResolvedInstructionArgument(argument_name=arg_name, value=resultdef.value)
+        value = resultdef.value
+        if extract:
+            value = _extract_json_path(value, extract)
+        return StrResolvedInstructionArgument(argument_name=arg_name, value=value)
     elif isinstance(resultdef, IntResolvedInstructionResult):
         return IntResolvedInstructionArgument(argument_name=arg_name, value=resultdef.value)
     elif isinstance(resultdef, ListStrResolvedInstructionResult):

@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -15,7 +16,7 @@ class TestHostApp(unittest.TestCase):
         result = runner.invoke(host_app, ["--help"])
 
         self.assertEqual(result.exit_code, 0)
-        for cmd in ["status", "start", "stop", "restart"]:
+        for cmd in ["status", "start", "stop", "restart", "list", "show"]:
             self.assertTrue(result.stdout.index(cmd) > 0, f"missing command: {cmd}")
 
     def test_no_arg_defaults_to_help(self) -> None:
@@ -161,7 +162,20 @@ class TestHostStartCommand(unittest.TestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         mock_host_handler_class.assert_called_once()
-        mock_handler_fns["start_host"].assert_called_once()
+        mock_handler_fns["start_host"].assert_called_once_with(name=None)
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_name(self, mock_project_dir: Mock, mock_host_handler_class: Mock) -> None:
+        mock_host_handler, mock_handler_fns = self.get_mock_host_handler()
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["start", "--name", "node-1"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["start_host"].assert_called_once_with(name="node-1")
 
     @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
     @patch("jupyter_deploy.cmd_utils.project_dir")
@@ -226,7 +240,20 @@ class TestHostStopCommand(unittest.TestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         mock_host_handler_class.assert_called_once()
-        mock_handler_fns["stop_host"].assert_called_once()
+        mock_handler_fns["stop_host"].assert_called_once_with(name=None)
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_name(self, mock_project_dir: Mock, mock_host_handler_class: Mock) -> None:
+        mock_host_handler, mock_handler_fns = self.get_mock_host_handler()
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["stop", "--name", "node-1"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["stop_host"].assert_called_once_with(name="node-1")
 
     @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
     @patch("jupyter_deploy.cmd_utils.project_dir")
@@ -291,7 +318,20 @@ class TestHostRestartCommand(unittest.TestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         mock_host_handler_class.assert_called_once()
-        mock_handler_fns["restart_host"].assert_called_once()
+        mock_handler_fns["restart_host"].assert_called_once_with(name=None)
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_name(self, mock_project_dir: Mock, mock_host_handler_class: Mock) -> None:
+        mock_host_handler, mock_handler_fns = self.get_mock_host_handler()
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["restart", "--name", "node-1"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["restart_host"].assert_called_once_with(name="node-1")
 
     @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
     @patch("jupyter_deploy.cmd_utils.project_dir")
@@ -456,7 +496,35 @@ class TestHostConnectCommand(unittest.TestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         mock_host_handler_class.assert_called_once()
-        mock_handler_fns["connect"].assert_called_once()
+        mock_handler_fns["connect"].assert_called_once_with(name=None)
+
+    @patch("jupyter_deploy.cli.host_app.SimpleDisplayManager")
+    @patch("jupyter_deploy.cli.host_app.Console")
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_name(
+        self,
+        mock_project_dir: Mock,
+        mock_host_handler_class: Mock,
+        mock_console_class: Mock,
+        mock_simple_display_manager_class: Mock,
+    ) -> None:
+        mock_host_handler, mock_handler_fns = self.get_mock_host_handler()
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        mock_spinner = Mock()
+        mock_spinner.__enter__ = Mock(return_value=None)
+        mock_spinner.__exit__ = Mock(return_value=None)
+        mock_simple_display_manager = Mock()
+        mock_simple_display_manager.spinner.return_value = mock_spinner
+        mock_simple_display_manager_class.return_value = mock_simple_display_manager
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["connect", "--name", "node-1"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["connect"].assert_called_once_with(name="node-1")
 
     @patch("jupyter_deploy.cli.host_app.SimpleDisplayManager")
     @patch("jupyter_deploy.cli.host_app.Console")
@@ -564,7 +632,7 @@ class TestHostExecCommand(unittest.TestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         mock_host_handler_class.assert_called_once()
-        mock_handler_fns["exec_command"].assert_called_once_with(["df", "-h"])
+        mock_handler_fns["exec_command"].assert_called_once_with(["df", "-h"], name=None)
 
     @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
     @patch("jupyter_deploy.cmd_utils.project_dir")
@@ -580,7 +648,7 @@ class TestHostExecCommand(unittest.TestCase):
 
         # Assert
         self.assertEqual(result.exit_code, 0)
-        mock_handler_fns["exec_command"].assert_called_once_with(["echo", "hello world"])
+        mock_handler_fns["exec_command"].assert_called_once_with(["echo", "hello world"], name=None)
 
     @patch("jupyter_deploy.cli.host_app.SimpleDisplayManager")
     @patch("jupyter_deploy.cli.host_app.Console")
@@ -636,7 +704,7 @@ class TestHostExecCommand(unittest.TestCase):
 
         # Assert
         self.assertEqual(result.exit_code, 127)
-        mock_handler_fns["exec_command"].assert_called_once_with(["command_that_does_not_exist"])
+        mock_handler_fns["exec_command"].assert_called_once_with(["command_that_does_not_exist"], name=None)
 
     @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
     @patch("jupyter_deploy.cmd_utils.project_dir")
@@ -671,6 +739,19 @@ class TestHostExecCommand(unittest.TestCase):
 
     @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
     @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_name(self, mock_project_dir: Mock, mock_host_handler_class: Mock) -> None:
+        mock_host_handler, mock_handler_fns = self.get_mock_host_handler()
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["exec", "--name", "node-1", "--", "whoami"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["exec_command"].assert_called_once_with(["whoami"], name="node-1")
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
     def test_raises_when_handler_exec_command_raises(
         self, mock_project_dir: Mock, mock_host_handler_class: Mock
     ) -> None:
@@ -685,4 +766,221 @@ class TestHostExecCommand(unittest.TestCase):
         result = runner.invoke(host_app, ["exec", "--", "whoami"])
 
         # Assert
+        self.assertNotEqual(result.exit_code, 0)
+
+
+class TestHostListCommand(unittest.TestCase):
+    def get_mock_host_handler(self) -> tuple[Mock, dict[str, Mock]]:
+        mock_list_hosts = Mock()
+        mock_host_handler = Mock()
+
+        mock_host_handler.list_hosts = mock_list_hosts
+        mock_list_hosts.return_value = ("node-1,node-2", None)
+
+        return mock_host_handler, {
+            "list_hosts": mock_list_hosts,
+        }
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_instantiates_host_handler_and_calls_list(
+        self, mock_project_dir: Mock, mock_host_handler_class: Mock
+    ) -> None:
+        mock_host_handler, mock_handler_fns = self.get_mock_host_handler()
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["list"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_host_handler_class.assert_called_once()
+        mock_handler_fns["list_hosts"].assert_called_once_with(query="", limit=None, continue_from=None)
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_query_option(self, mock_project_dir: Mock, mock_host_handler_class: Mock) -> None:
+        mock_host_handler, mock_handler_fns = self.get_mock_host_handler()
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["list", "--query", "role=worker"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["list_hosts"].assert_called_once_with(query="role=worker", limit=None, continue_from=None)
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_pagination_options(self, mock_project_dir: Mock, mock_host_handler_class: Mock) -> None:
+        mock_host_handler, mock_handler_fns = self.get_mock_host_handler()
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["list", "-n", "10", "--continue-from", "abc123"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["list_hosts"].assert_called_once_with(query="", limit=10, continue_from="abc123")
+
+    @patch("jupyter_deploy.cli.host_app.SimpleDisplayManager")
+    @patch("jupyter_deploy.cli.host_app.Console")
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_prints_next_token_when_present(
+        self,
+        mock_project_dir: Mock,
+        mock_host_handler_class: Mock,
+        mock_console_class: Mock,
+        mock_simple_display_manager_class: Mock,
+    ) -> None:
+        mock_host_handler = Mock()
+        mock_host_handler.list_hosts.return_value = ("node-1", "next-token-xyz")
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        mock_console = Mock()
+        mock_console_class.return_value = mock_console
+
+        mock_spinner = Mock()
+        mock_spinner.__enter__ = Mock(return_value=None)
+        mock_spinner.__exit__ = Mock(return_value=None)
+        mock_simple_display_manager = Mock()
+        mock_simple_display_manager.spinner.return_value = mock_spinner
+        mock_simple_display_manager_class.return_value = mock_simple_display_manager
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["list", "-n", "1"])
+
+        self.assertEqual(result.exit_code, 0)
+        print_calls = [str(call) for call in mock_console.print.mock_calls]
+        self.assertTrue(any("next-token-xyz" in call for call in print_calls))
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_switches_dir_when_passed_a_project(self, mock_project_dir: Mock, mock_host_handler_class: Mock) -> None:
+        mock_host_handler, _ = self.get_mock_host_handler()
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["list", "--path", "/test/project/path"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_project_dir.assert_called_once_with(Path("/test/project/path"))
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_json_output_with_pagination_token(self, mock_project_dir: Mock, mock_host_handler_class: Mock) -> None:
+        mock_host_handler = Mock()
+        mock_host_handler.list_hosts.return_value = (["node-1", "node-2"], "next-page-token")
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["list", "--json"])
+
+        self.assertEqual(result.exit_code, 0)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["hosts"], ["node-1", "node-2"])
+        self.assertEqual(data["continue_from"], "next-page-token")
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_json_output_without_pagination_token(self, mock_project_dir: Mock, mock_host_handler_class: Mock) -> None:
+        mock_host_handler = Mock()
+        mock_host_handler.list_hosts.return_value = (["node-1", "node-2"], None)
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["list", "--json"])
+
+        self.assertEqual(result.exit_code, 0)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["hosts"], ["node-1", "node-2"])
+        self.assertNotIn("continue_from", data)
+
+
+class TestHostShowCommand(unittest.TestCase):
+    def get_mock_host_handler(self) -> tuple[Mock, dict[str, Mock]]:
+        mock_show_host = Mock()
+        mock_host_handler = Mock()
+
+        mock_host_handler.show_host = mock_show_host
+        mock_show_host.return_value = {"name": "node-1", "status": "Ready"}
+
+        return mock_host_handler, {
+            "show_host": mock_show_host,
+        }
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_instantiates_host_handler_and_calls_show(
+        self, mock_project_dir: Mock, mock_host_handler_class: Mock
+    ) -> None:
+        mock_host_handler, mock_handler_fns = self.get_mock_host_handler()
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["show", "--name", "node-1"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_host_handler_class.assert_called_once()
+        mock_handler_fns["show_host"].assert_called_once_with(name="node-1")
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_requires_name_option(self, mock_project_dir: Mock, mock_host_handler_class: Mock) -> None:
+        mock_host_handler, _ = self.get_mock_host_handler()
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["show"])
+
+        self.assertNotEqual(result.exit_code, 0)
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_switches_dir_when_passed_a_project(self, mock_project_dir: Mock, mock_host_handler_class: Mock) -> None:
+        mock_host_handler, _ = self.get_mock_host_handler()
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["show", "--name", "node-1", "--path", "/test/project/path"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_project_dir.assert_called_once_with(Path("/test/project/path"))
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_json_output(self, mock_project_dir: Mock, mock_host_handler_class: Mock) -> None:
+        mock_host_handler = Mock()
+        mock_host_handler.show_host.return_value = {"name": "node-1", "status": "Ready", "resource": '{"spec": {}}'}
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["show", "--name", "node-1", "--json"])
+
+        self.assertEqual(result.exit_code, 0)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["name"], "node-1")
+        self.assertEqual(data["status"], "Ready")
+        self.assertIn("resource", data)
+
+    @patch("jupyter_deploy.handlers.resource.host_handler.HostHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_raises_when_handler_raises(self, mock_project_dir: Mock, mock_host_handler_class: Mock) -> None:
+        mock_host_handler, mock_handler_fns = self.get_mock_host_handler()
+        mock_host_handler_class.return_value = mock_host_handler
+        mock_handler_fns["show_host"].side_effect = Exception("Test error")
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(host_app, ["show", "--name", "node-1"])
+
         self.assertNotEqual(result.exit_code, 0)

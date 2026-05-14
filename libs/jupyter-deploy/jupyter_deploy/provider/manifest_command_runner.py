@@ -10,6 +10,7 @@ from jupyter_deploy.manifest import JupyterDeployCommandV1
 from jupyter_deploy.provider.instruction_runner_factory import InstructionRunnerFactory
 from jupyter_deploy.provider.resolved_argdefs import (
     ResolvedInstructionArgument,
+    _extract_json_path,
     resolve_cliparam_argdef,
     resolve_output_argdef,
     resolve_result_argdef,
@@ -69,7 +70,10 @@ class ManifestCommandRunner:
                     )
                 elif arg_source_type == InstructionArgumentSource.INSTRUCTION_RESULT:
                     resolved_argdefs[arg_name] = resolve_result_argdef(
-                        resultdefs=resolved_resultdefs, arg_name=arg_name, source_key=source_key
+                        resultdefs=resolved_resultdefs,
+                        arg_name=arg_name,
+                        source_key=source_key,
+                        extract=arg_def.extract,
                     )
                 elif arg_source_type == InstructionArgumentSource.CLI_ARGUMENT:
                     resolved_argdefs[arg_name] = resolve_cliparam_argdef(
@@ -109,10 +113,15 @@ class ManifestCommandRunner:
             )
         result_def = self._resolved_resultdefs[source_key]
 
-        value = transform_fn(result_def.value)
+        value = result_def.value
+        if result.extract:
+            value = _extract_json_path(str(value), result.extract)
+        value = transform_fn(value)
 
         base_type = get_origin(expect_type) or expect_type
         if not isinstance(value, base_type):
+            if isinstance(value, str) and base_type is int and value.lstrip("-").isdigit():
+                return int(value)  # type: ignore
             raise TypeError(
                 f"Expected result '{result_name}' to be of type {expect_type.__name__}, got {type(value).__name__}"
             )

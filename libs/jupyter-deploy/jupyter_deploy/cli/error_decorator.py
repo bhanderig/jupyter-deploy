@@ -38,6 +38,8 @@ from jupyter_deploy.exceptions import (
     ProviderPermissionError,
     ReadConfigurationError,
     ReadManifestError,
+    ResourceNameRequiredError,
+    ResourceNotFoundError,
     SupervisedExecutionError,
     ToolRequiredError,
     UnreachableHostError,
@@ -180,6 +182,16 @@ def handle_cli_errors(console: Console) -> Generator[None, None, None]:
         console.print(f":x: {e}", style="bold red")
         console.line()
         console.print(":bulb: To see available logs: [bold cyan]jd history list CMD[/]")
+        raise typer.Exit(code=1) from None
+
+    except ResourceNameRequiredError as e:
+        console.print(f":x: {e}", style="bold red")
+        console.line()
+        console.print(f":bulb: Run [bold cyan]{e.list_command}[/] to see available {e.resource_type}s.")
+        raise typer.Exit(code=1) from None
+
+    except ResourceNotFoundError as e:
+        console.print(f":x: {e}", style="bold red")
         raise typer.Exit(code=1) from None
 
     except (

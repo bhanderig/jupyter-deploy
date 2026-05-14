@@ -40,7 +40,7 @@ class TestK8sCustomRunner(unittest.TestCase):
 
         result = runner.execute_instruction(instruction_name="list", resolved_arguments=_crd_args())
 
-        self.assertEqual(result["Names"].value, "ws-1,ws-2")
+        self.assertEqual(result["Names"].value, ["ws-1", "ws-2"])
         self.assertEqual(json.loads(result["Items"].value), items)
         self.assertEqual(result["NextToken"].value, "")
         mock_k8s_custom.list_namespaced.assert_called_once_with(
@@ -92,7 +92,7 @@ class TestK8sCustomRunner(unittest.TestCase):
 
         result = runner.execute_instruction(instruction_name="list-cluster", resolved_arguments=args)
 
-        self.assertEqual(result["Names"].value, "cr-1")
+        self.assertEqual(result["Names"].value, ["cr-1"])
         self.assertEqual(result["NextToken"].value, "")
         mock_k8s_custom.list_cluster.assert_called_once_with(
             runner.custom_api, ref=WORKSPACE_REF, limit=None, _continue=None

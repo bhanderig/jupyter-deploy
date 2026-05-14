@@ -30,10 +30,12 @@ class TestK8sApiRunner(unittest.TestCase):
         runner = K8sApiRunner(NullDisplay(), kubeconfig_path="/tmp/kubeconfig")
         resolved_args: dict[str, ResolvedInstructionArgument] = {"arg1": Mock(spec=ResolvedInstructionArgument)}
 
-        result = runner.execute_instruction(instruction_name="core.list-nodes", resolved_arguments=resolved_args)
+        result = runner.execute_instruction(instruction_name="k8s.core.list-nodes", resolved_arguments=resolved_args)
 
         mock_factory.from_kubeconfig.assert_called_once_with(kubeconfig_path="/tmp/kubeconfig")
-        mock_core_runner_class.assert_called_once_with(ANY, api_client=mock_api_client)
+        mock_core_runner_class.assert_called_once_with(
+            ANY, api_client=mock_api_client, kubeconfig_path="/tmp/kubeconfig"
+        )
         mock_core_runner.execute_instruction.assert_called_once_with(
             instruction_name="list-nodes", resolved_arguments=resolved_args
         )
@@ -55,7 +57,7 @@ class TestK8sApiRunner(unittest.TestCase):
         runner = K8sApiRunner(NullDisplay(), kubeconfig_path="/tmp/kubeconfig")
         resolved_args: dict[str, ResolvedInstructionArgument] = {"arg1": Mock(spec=ResolvedInstructionArgument)}
 
-        result = runner.execute_instruction(instruction_name="custom.list", resolved_arguments=resolved_args)
+        result = runner.execute_instruction(instruction_name="k8s.custom.list", resolved_arguments=resolved_args)
 
         mock_factory.from_kubeconfig.assert_called_once_with(kubeconfig_path="/tmp/kubeconfig")
         mock_custom_runner_class.assert_called_once_with(ANY, api_client=mock_api_client)
@@ -76,8 +78,8 @@ class TestK8sApiRunner(unittest.TestCase):
         runner = K8sApiRunner(NullDisplay(), kubeconfig_path="/tmp/kubeconfig")
         resolved_args: dict[str, ResolvedInstructionArgument] = {"arg1": Mock(spec=ResolvedInstructionArgument)}
 
-        runner.execute_instruction(instruction_name="core.list-nodes", resolved_arguments=resolved_args)
-        runner.execute_instruction(instruction_name="core.get-node", resolved_arguments=resolved_args)
+        runner.execute_instruction(instruction_name="k8s.core.list-nodes", resolved_arguments=resolved_args)
+        runner.execute_instruction(instruction_name="k8s.core.get-node", resolved_arguments=resolved_args)
 
         mock_core_runner_class.assert_called_once()
         self.assertEqual(mock_core_runner.execute_instruction.call_count, 2)
@@ -90,16 +92,59 @@ class TestK8sApiRunner(unittest.TestCase):
         runner = K8sApiRunner(NullDisplay(), kubeconfig_path="/tmp/kubeconfig")
 
         with self.assertRaises(InstructionNotFoundError) as context:
-            runner.execute_instruction(instruction_name="unknown.command", resolved_arguments={})
+            runner.execute_instruction(instruction_name="k8s.unknown.command", resolved_arguments={})
 
         self.assertIn("unknown", str(context.exception))
 
     def test_execute_raises_on_invalid_instruction_name(self) -> None:
         runner = K8sApiRunner(NullDisplay(), kubeconfig_path="/tmp/kubeconfig")
 
-        invalid_instructions = ["", ".", "core", "core."]
+        invalid_instructions = ["", ".", "k8s", "k8s.", "k8s.core", "k8s.core."]
         for invalid_instruction in invalid_instructions:
             with self.subTest(invalid_instruction=invalid_instruction):
                 with self.assertRaises(ValueError) as context:
                     runner.execute_instruction(instruction_name=invalid_instruction, resolved_arguments={})
                 self.assertIn(invalid_instruction, str(context.exception))
+
+    @patch("jupyter_deploy.provider.k8s.k8s_runner.K8sCoreRunner")
+    @patch("jupyter_deploy.provider.k8s.k8s_runner.K8sClientFactory")
+    def test_uses_eks_cluster_when_all_params_provided(self, mock_factory: Mock, mock_core_runner_class: Mock) -> None:
+        mock_api_client: Mock = Mock()
+        mock_factory.from_eks_cluster.return_value = mock_api_client
+        mock_core_runner_class.return_value = Mock()
+
+        runner = K8sApiRunner(
+            NullDisplay(),
+            cluster_endpoint="https://example.eks.amazonaws.com",
+            cluster_ca_data="Y2VydA==",
+            cluster_name="my-cluster",
+            region="us-west-2",
+        )
+        runner.execute_instruction(instruction_name="k8s.core.list-nodes", resolved_arguments={})
+
+        mock_factory.from_eks_cluster.assert_called_once_with(
+            endpoint="https://example.eks.amazonaws.com",
+            ca_data_b64="Y2VydA==",
+            cluster_name="my-cluster",
+            region="us-west-2",
+        )
+        mock_factory.from_kubeconfig.assert_not_called()
+
+    @patch("jupyter_deploy.provider.k8s.k8s_runner.K8sCoreRunner")
+    @patch("jupyter_deploy.provider.k8s.k8s_runner.K8sClientFactory")
+    def test_falls_back_to_kubeconfig_when_eks_params_incomplete(
+        self, mock_factory: Mock, mock_core_runner_class: Mock
+    ) -> None:
+        mock_api_client: Mock = Mock()
+        mock_factory.from_kubeconfig.return_value = mock_api_client
+        mock_core_runner_class.return_value = Mock()
+
+        runner = K8sApiRunner(
+            NullDisplay(),
+            kubeconfig_path="/tmp/kubeconfig",
+            cluster_endpoint="https://example.eks.amazonaws.com",
+        )
+        runner.execute_instruction(instruction_name="k8s.core.list-nodes", resolved_arguments={})
+
+        mock_factory.from_kubeconfig.assert_called_once_with(kubeconfig_path="/tmp/kubeconfig")
+        mock_factory.from_eks_cluster.assert_not_called()

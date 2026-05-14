@@ -31,6 +31,10 @@ output "workspace_router_namespace" {
   value = var.workspace_router_namespace
 }
 
+output "workspace_shared_namespace" {
+  value = var.workspace_shared_namespace
+}
+
 output "workspace_base_url" {
   value = local.workspaces_base_url
 }
@@ -47,3 +51,32 @@ output "secret_arn" {
 output "jupyterlab_image_uri" {
   value = var.workspace_app_jupyterlab_use ? module.app_jupyterlab[0].image_uri : ""
 }
+
+output "kubeconfig_path" {
+  value = abspath("${path.root}/.kube/config")
+}
+
+output "workspace_crd_group" {
+  value = "workspace.jupyter.org"
+}
+
+output "workspace_crd_version" {
+  value = "v1alpha1"
+}
+
+output "workspace_crd_plural" {
+  value = "workspaces"
+}
+
+output "workspace_patch_start" {
+  value = "{\"spec\":{\"desiredStatus\":\"Running\"}}"
+}
+
+output "workspace_patch_stop" {
+  value = "{\"spec\":{\"desiredStatus\":\"Stopped\"}}"
+}
+
+output "server_default_scope" {
+  value = var.workspace_rbac_namespaces[0]
+}
+

@@ -33,6 +33,7 @@ class TestHostHandler(unittest.TestCase):
         mock_get_command.return_value = Mock()
         mock_manifest.get_command = mock_get_command
         mock_manifest.get_engine = mock_get_engine
+        mock_manifest.multi_host = False
         return mock_manifest, {"get_command": mock_get_command, "get_engine": mock_get_engine}
 
     def get_mock_outputs_handler_and_fns(self) -> tuple[Mock, dict[str, Mock]]:
@@ -118,7 +119,13 @@ class TestHostHandler(unittest.TestCase):
         handler = HostHandler(display_manager=NullDisplay())
 
         with self.assertRaises(NotImplementedError):
+            handler.list_hosts("")
+
+        with self.assertRaises(NotImplementedError):
             handler.get_host_status()
+
+        with self.assertRaises(NotImplementedError):
+            handler.show_host("node-1")
 
         with self.assertRaises(NotImplementedError):
             handler.start_host()
@@ -257,6 +264,185 @@ class TestHostHandler(unittest.TestCase):
         # add only commands that return a result here
         with self.assertRaises(KeyError):
             handler.get_host_status()
+
+    @patch("jupyter_deploy.handlers.base_project_handler.retrieve_project_manifest")
+    @patch("jupyter_deploy.engine.terraform.tf_outputs.TerraformOutputsHandler")
+    @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
+    @patch("jupyter_deploy.provider.manifest_command_runner.ManifestCommandRunner")
+    def test_list_hosts_calls_run_command_and_return_result(
+        self,
+        mock_cmd_runner_class: Mock,
+        mock_tf_variables_handler: Mock,
+        mock_tf_outputs_handler: Mock,
+        mock_retrieve_manifest: Mock,
+    ) -> None:
+        # Setup
+        mock_manifest, mock_manifest_fns = self.get_mock_manifest_and_fns()
+        mock_cmd = Mock()
+        mock_manifest_fns["get_command"].return_value = mock_cmd
+
+        mock_retrieve_manifest.return_value = mock_manifest
+        mock_output_handler, _ = self.get_mock_outputs_handler_and_fns()
+
+        mock_tf_outputs_handler.return_value = mock_output_handler
+        mock_variable_handler = Mock()
+        mock_tf_variables_handler.return_value = mock_variable_handler
+
+        mock_cmd_runner, mock_cmd_runner_fns = self.get_mock_manifest_cmd_runner_and_fns()
+        mock_cmd_runner_fns["get_result_value"].return_value = ["node-1", "node-2"]
+        mock_cmd_runner_fns["get_result_value_with_fallback"].return_value = ""
+        mock_cmd_runner_class.return_value = mock_cmd_runner
+
+        # Act
+        handler = HostHandler(display_manager=NullDisplay())
+        result, next_token = handler.list_hosts(query="")
+
+        # Verify
+        self.assertEqual(result, ["node-1", "node-2"])
+        self.assertIsNone(next_token)
+        mock_manifest_fns["get_command"].assert_called_once_with("host.list")
+        mock_cmd_runner_fns["run_command_sequence"].assert_called_once()
+        cli_paramdefs = mock_cmd_runner_fns["run_command_sequence"].call_args[1]["cli_paramdefs"]
+        self.assertIn("query", cli_paramdefs)
+        self.assertEqual(cli_paramdefs["query"].value, "")
+        mock_cmd_runner_fns["get_result_value"].assert_called_once_with(mock_cmd, "host.list", list)
+        mock_cmd_runner_fns["get_result_value_with_fallback"].assert_called_once_with(
+            mock_cmd, "host.list.next_token", str, ""
+        )
+
+    @patch("jupyter_deploy.handlers.base_project_handler.retrieve_project_manifest")
+    @patch("jupyter_deploy.engine.terraform.tf_outputs.TerraformOutputsHandler")
+    @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
+    @patch("jupyter_deploy.provider.manifest_command_runner.ManifestCommandRunner")
+    def test_list_hosts_passes_pagination_params(
+        self,
+        mock_cmd_runner_class: Mock,
+        mock_tf_variables_handler: Mock,
+        mock_tf_outputs_handler: Mock,
+        mock_retrieve_manifest: Mock,
+    ) -> None:
+        mock_manifest, mock_manifest_fns = self.get_mock_manifest_and_fns()
+        mock_manifest_fns["get_command"].return_value = Mock()
+        mock_retrieve_manifest.return_value = mock_manifest
+        mock_tf_outputs_handler.return_value = self.get_mock_outputs_handler_and_fns()[0]
+        mock_tf_variables_handler.return_value = Mock()
+
+        mock_cmd_runner, mock_cmd_runner_fns = self.get_mock_manifest_cmd_runner_and_fns()
+        mock_cmd_runner_fns["get_result_value"].return_value = ["node-1"]
+        mock_cmd_runner_fns["get_result_value_with_fallback"].return_value = "abc123"
+        mock_cmd_runner_class.return_value = mock_cmd_runner
+
+        handler = HostHandler(display_manager=NullDisplay())
+        result, next_token = handler.list_hosts(query="", limit=10, continue_from="token-xyz")
+
+        self.assertEqual(result, ["node-1"])
+        self.assertEqual(next_token, "abc123")
+
+        cli_paramdefs = mock_cmd_runner_fns["run_command_sequence"].call_args[1]["cli_paramdefs"]
+        self.assertIn("limit", cli_paramdefs)
+        self.assertEqual(cli_paramdefs["limit"].value, "10")
+        self.assertIn("continue_from", cli_paramdefs)
+        self.assertEqual(cli_paramdefs["continue_from"].value, "token-xyz")
+
+    @patch("jupyter_deploy.handlers.base_project_handler.retrieve_project_manifest")
+    @patch("jupyter_deploy.engine.terraform.tf_outputs.TerraformOutputsHandler")
+    @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
+    @patch("jupyter_deploy.provider.manifest_command_runner.ManifestCommandRunner")
+    def test_list_hosts_defaults_pagination_params_when_not_provided(
+        self,
+        mock_cmd_runner_class: Mock,
+        mock_tf_variables_handler: Mock,
+        mock_tf_outputs_handler: Mock,
+        mock_retrieve_manifest: Mock,
+    ) -> None:
+        mock_manifest, mock_manifest_fns = self.get_mock_manifest_and_fns()
+        mock_manifest_fns["get_command"].return_value = Mock()
+        mock_retrieve_manifest.return_value = mock_manifest
+        mock_tf_outputs_handler.return_value = self.get_mock_outputs_handler_and_fns()[0]
+        mock_tf_variables_handler.return_value = Mock()
+
+        mock_cmd_runner, mock_cmd_runner_fns = self.get_mock_manifest_cmd_runner_and_fns()
+        mock_cmd_runner_fns["get_result_value"].return_value = "node-1"
+        mock_cmd_runner_fns["get_result_value_with_fallback"].return_value = ""
+        mock_cmd_runner_class.return_value = mock_cmd_runner
+
+        handler = HostHandler(display_manager=NullDisplay())
+        handler.list_hosts(query="")
+
+        cli_paramdefs = mock_cmd_runner_fns["run_command_sequence"].call_args[1]["cli_paramdefs"]
+        self.assertEqual(cli_paramdefs["limit"].value, "")
+        self.assertEqual(cli_paramdefs["continue_from"].value, "")
+
+    @patch("jupyter_deploy.handlers.base_project_handler.retrieve_project_manifest")
+    @patch("jupyter_deploy.engine.terraform.tf_outputs.TerraformOutputsHandler")
+    @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
+    @patch("jupyter_deploy.provider.manifest_command_runner.ManifestCommandRunner")
+    def test_show_host_calls_run_command_and_return_details(
+        self,
+        mock_cmd_runner_class: Mock,
+        mock_tf_variables_handler: Mock,
+        mock_tf_outputs_handler: Mock,
+        mock_retrieve_manifest: Mock,
+    ) -> None:
+        # Setup — use the real manifest so _collect_results iterates actual result defs
+        mock_retrieve_manifest.return_value = self.mock_full_manifest
+        mock_output_handler, _ = self.get_mock_outputs_handler_and_fns()
+
+        mock_tf_outputs_handler.return_value = mock_output_handler
+        mock_tf_variables_handler.return_value = Mock()
+
+        mock_cmd_runner, mock_cmd_runner_fns = self.get_mock_manifest_cmd_runner_and_fns()
+        mock_cmd_runner_fns["get_result_value_with_fallback"].side_effect = [
+            "node-1",
+            "Ready",
+            '{"metadata": {"name": "node-1"}}',
+        ]
+        mock_cmd_runner_class.return_value = mock_cmd_runner
+
+        # Act
+        handler = HostHandler(display_manager=NullDisplay())
+        result = handler.show_host(name="node-1")
+
+        # Verify — keys come from manifest result-name with "host.show." prefix stripped
+        self.assertEqual(result["name"], "node-1")
+        self.assertEqual(result["status"], "Ready")
+        self.assertEqual(result["resource"], {"metadata": {"name": "node-1"}})
+
+        cli_paramdefs = mock_cmd_runner_fns["run_command_sequence"].call_args[1]["cli_paramdefs"]
+        self.assertIn("name", cli_paramdefs)
+        self.assertEqual(cli_paramdefs["name"].value, "node-1")
+
+    @patch("jupyter_deploy.handlers.base_project_handler.retrieve_project_manifest")
+    @patch("jupyter_deploy.engine.terraform.tf_outputs.TerraformOutputsHandler")
+    @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
+    @patch("jupyter_deploy.provider.manifest_command_runner.ManifestCommandRunner")
+    def test_get_host_status_with_name_passes_cli_param(
+        self,
+        mock_cmd_runner_class: Mock,
+        mock_tf_variables_handler: Mock,
+        mock_tf_outputs_handler: Mock,
+        mock_retrieve_manifest: Mock,
+    ) -> None:
+        # Setup
+        mock_manifest, mock_manifest_fns = self.get_mock_manifest_and_fns()
+        mock_cmd = Mock()
+        mock_manifest_fns["get_command"].return_value = mock_cmd
+
+        mock_retrieve_manifest.return_value = mock_manifest
+        mock_tf_outputs_handler.return_value = self.get_mock_outputs_handler_and_fns()[0]
+        mock_tf_variables_handler.return_value = Mock()
+
+        mock_cmd_runner, mock_cmd_runner_fns = self.get_mock_manifest_cmd_runner_and_fns()
+        mock_cmd_runner_class.return_value = mock_cmd_runner
+
+        # Act
+        handler = HostHandler(display_manager=NullDisplay())
+        handler.get_host_status(name="node-1")
+
+        # Verify
+        cli_paramdefs = mock_cmd_runner_fns["run_command_sequence"].call_args[1]["cli_paramdefs"]
+        self.assertIn("name", cli_paramdefs)
+        self.assertEqual(cli_paramdefs["name"].value, "node-1")
 
     @patch("jupyter_deploy.handlers.base_project_handler.retrieve_project_manifest")
     @patch("jupyter_deploy.engine.terraform.tf_outputs.TerraformOutputsHandler")
@@ -549,6 +735,117 @@ class TestHostHandler(unittest.TestCase):
         mock_cmd_runner_fns["get_result_value_with_fallback"].assert_called_once_with(
             mock_cmd, "host.exec.returncode", int, 0
         )
+
+    @patch("jupyter_deploy.handlers.base_project_handler.retrieve_project_manifest")
+    @patch("jupyter_deploy.engine.terraform.tf_outputs.TerraformOutputsHandler")
+    @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
+    @patch("jupyter_deploy.provider.manifest_command_runner.ManifestCommandRunner")
+    def test_start_host_passes_name(
+        self,
+        mock_cmd_runner_class: Mock,
+        mock_tf_variables_handler: Mock,
+        mock_tf_outputs_handler: Mock,
+        mock_retrieve_manifest: Mock,
+    ) -> None:
+        mock_manifest, mock_manifest_fns = self.get_mock_manifest_and_fns()
+        mock_manifest_fns["get_command"].return_value = Mock()
+        mock_retrieve_manifest.return_value = mock_manifest
+        mock_tf_outputs_handler.return_value = self.get_mock_outputs_handler_and_fns()[0]
+        mock_tf_variables_handler.return_value = Mock()
+
+        mock_cmd_runner, mock_cmd_runner_fns = self.get_mock_manifest_cmd_runner_and_fns()
+        mock_cmd_runner_class.return_value = mock_cmd_runner
+
+        handler = HostHandler(display_manager=NullDisplay())
+        handler.start_host(name="node-1")
+
+        cli_paramdefs = mock_cmd_runner_fns["run_command_sequence"].call_args[1]["cli_paramdefs"]
+        self.assertIn("name", cli_paramdefs)
+        self.assertEqual(cli_paramdefs["name"].value, "node-1")
+
+    @patch("jupyter_deploy.handlers.base_project_handler.retrieve_project_manifest")
+    @patch("jupyter_deploy.engine.terraform.tf_outputs.TerraformOutputsHandler")
+    @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
+    @patch("jupyter_deploy.provider.manifest_command_runner.ManifestCommandRunner")
+    def test_stop_host_passes_name(
+        self,
+        mock_cmd_runner_class: Mock,
+        mock_tf_variables_handler: Mock,
+        mock_tf_outputs_handler: Mock,
+        mock_retrieve_manifest: Mock,
+    ) -> None:
+        mock_manifest, mock_manifest_fns = self.get_mock_manifest_and_fns()
+        mock_manifest_fns["get_command"].return_value = Mock()
+        mock_retrieve_manifest.return_value = mock_manifest
+        mock_tf_outputs_handler.return_value = self.get_mock_outputs_handler_and_fns()[0]
+        mock_tf_variables_handler.return_value = Mock()
+
+        mock_cmd_runner, mock_cmd_runner_fns = self.get_mock_manifest_cmd_runner_and_fns()
+        mock_cmd_runner_class.return_value = mock_cmd_runner
+
+        handler = HostHandler(display_manager=NullDisplay())
+        handler.stop_host(name="node-1")
+
+        cli_paramdefs = mock_cmd_runner_fns["run_command_sequence"].call_args[1]["cli_paramdefs"]
+        self.assertIn("name", cli_paramdefs)
+        self.assertEqual(cli_paramdefs["name"].value, "node-1")
+
+    @patch("jupyter_deploy.handlers.base_project_handler.retrieve_project_manifest")
+    @patch("jupyter_deploy.engine.terraform.tf_outputs.TerraformOutputsHandler")
+    @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
+    @patch("jupyter_deploy.provider.manifest_command_runner.ManifestCommandRunner")
+    def test_connect_passes_name(
+        self,
+        mock_cmd_runner_class: Mock,
+        mock_tf_variables_handler: Mock,
+        mock_tf_outputs_handler: Mock,
+        mock_retrieve_manifest: Mock,
+    ) -> None:
+        mock_manifest, mock_manifest_fns = self.get_mock_manifest_and_fns()
+        mock_manifest_fns["get_command"].return_value = Mock()
+        mock_retrieve_manifest.return_value = mock_manifest
+        mock_tf_outputs_handler.return_value = self.get_mock_outputs_handler_and_fns()[0]
+        mock_tf_variables_handler.return_value = Mock()
+
+        mock_cmd_runner, mock_cmd_runner_fns = self.get_mock_manifest_cmd_runner_and_fns()
+        mock_cmd_runner_class.return_value = mock_cmd_runner
+
+        handler = HostHandler(display_manager=NullDisplay())
+        handler.connect(name="node-1")
+
+        cli_paramdefs = mock_cmd_runner_fns["run_command_sequence"].call_args[1]["cli_paramdefs"]
+        self.assertIn("name", cli_paramdefs)
+        self.assertEqual(cli_paramdefs["name"].value, "node-1")
+
+    @patch("jupyter_deploy.handlers.base_project_handler.retrieve_project_manifest")
+    @patch("jupyter_deploy.engine.terraform.tf_outputs.TerraformOutputsHandler")
+    @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
+    @patch("jupyter_deploy.provider.manifest_command_runner.ManifestCommandRunner")
+    def test_exec_command_passes_name(
+        self,
+        mock_cmd_runner_class: Mock,
+        mock_tf_variables_handler: Mock,
+        mock_tf_outputs_handler: Mock,
+        mock_retrieve_manifest: Mock,
+    ) -> None:
+        mock_manifest, mock_manifest_fns = self.get_mock_manifest_and_fns()
+        mock_manifest_fns["get_command"].return_value = Mock()
+        mock_retrieve_manifest.return_value = mock_manifest
+        mock_tf_outputs_handler.return_value = self.get_mock_outputs_handler_and_fns()[0]
+        mock_tf_variables_handler.return_value = Mock()
+
+        mock_cmd_runner, mock_cmd_runner_fns = self.get_mock_manifest_cmd_runner_and_fns()
+        mock_cmd_runner_fns["get_result_value"].side_effect = ["stdout", "stderr"]
+        mock_cmd_runner_fns["get_result_value_with_fallback"].return_value = 0
+        mock_cmd_runner_class.return_value = mock_cmd_runner
+
+        handler = HostHandler(display_manager=NullDisplay())
+        handler.exec_command(["pwd"], name="node-1")
+
+        cli_paramdefs = mock_cmd_runner_fns["run_command_sequence"].call_args[1]["cli_paramdefs"]
+        self.assertIn("name", cli_paramdefs)
+        self.assertEqual(cli_paramdefs["name"].value, "node-1")
+        self.assertIn("commands", cli_paramdefs)
 
     @patch("jupyter_deploy.handlers.base_project_handler.retrieve_project_manifest")
     @patch("jupyter_deploy.engine.terraform.tf_outputs.TerraformOutputsHandler")

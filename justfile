@@ -616,6 +616,10 @@ e2e-all project_dir test_filter="" options="" no_cache="false" template=default-
 test-e2e-base project_dir="sandbox-e2e" test_filter="" options="":
     @just test-e2e {{project_dir}} "{{test_filter}}" "{{options}}" tf-aws-ec2-base
 
+# Run E2E tests for the EKS OIDC template (tf-aws-eks-oidc)
+test-e2e-eks-oidc project_dir="sandbox-eks" test_filter="" options="":
+    @just test-e2e {{project_dir}} "{{test_filter}}" "{{options}}" tf-aws-eks-oidc
+
 # Run E2E tests for the CI template (tf-aws-iam-ci)
 test-e2e-ci project_dir="sandbox-e2e-ci" test_filter="" options="":
     @just test-e2e {{project_dir}} "{{test_filter}}" "{{options}}" tf-aws-iam-ci

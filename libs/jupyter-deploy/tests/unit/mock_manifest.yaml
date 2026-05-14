@@ -13,6 +13,9 @@ values:
   - name: "aws_region"
     source: "output"
     source-key: "region"
+  - name: "server_default_scope"
+    source: "output"
+    source-key: "server_default_scope"
 services:
   - jupyter
   - traefik
@@ -103,6 +106,80 @@ commands:
       - result-name: "host.exec.returncode"
         source: "result"
         source-key: "[0].ResponseCode"
+  - cmd: "host.list"
+    sequence:
+      - api-name: "aws.ec2.describe-instances"
+        arguments:
+          - api-attribute: "query"
+            source: "cli"
+            source-key: "query"
+          - api-attribute: "page_size"
+            source: "cli"
+            source-key: "limit"
+          - api-attribute: "pagination_token"
+            source: "cli"
+            source-key: "continue_from"
+    results:
+      - result-name: "host.list"
+        source: "result"
+        source-key: "[0].InstanceIds"
+      - result-name: "host.list.next_token"
+        source: "result"
+        source-key: "[0].NextToken"
+  - cmd: "host.show"
+    sequence:
+      - api-name: "aws.ec2.describe-instance"
+        arguments:
+          - api-attribute: "name"
+            source: "cli"
+            source-key: "name"
+    results:
+      - result-name: "host.show.name"
+        source: "result"
+        source-key: "[0].Name"
+      - result-name: "host.show.status"
+        source: "result"
+        source-key: "[0].Status"
+      - result-name: "host.show.resource"
+        source: "result"
+        source-key: "[0].Resource"
+  - cmd: "server.show"
+    sequence:
+      - api-name: "aws.ssm.wait-command-sync"
+        arguments:
+          - api-attribute: "name"
+            source: "cli"
+            source-key: "name"
+          - api-attribute: "scope"
+            source: "cli"
+            source-key: "scope"
+    results:
+      - result-name: "server.show.name"
+        source: "result"
+        source-key: "[0].Name"
+      - result-name: "server.show.resource"
+        source: "result"
+        source-key: "[0].Resource"
+  - cmd: "server.list"
+    sequence:
+      - api-name: "aws.ssm.wait-command-sync"
+        arguments:
+          - api-attribute: "scope"
+            source: "cli"
+            source-key: "scope"
+          - api-attribute: "page_size"
+            source: "cli"
+            source-key: "limit"
+          - api-attribute: "pagination_token"
+            source: "cli"
+            source-key: "continue_from"
+    results:
+      - result-name: "server.list"
+        source: "result"
+        source-key: "[0].Names"
+      - result-name: "server.list.next_token"
+        source: "result"
+        source-key: "[0].NextToken"
   - cmd: "server.status"
     sequence:
       - api-name: "aws.ssm.wait-command-sync"
@@ -491,6 +568,30 @@ commands:
       - result-name: "organization.get"
         source: "result"
         source-key: "[0].StandardOutputContent"
+  - cmd: "open.server"
+    sequence:
+      - api-name: "k8s.custom.get"
+        arguments:
+          - api-attribute: "group"
+            source: "output"
+            source-key: "workspace_crd_group"
+          - api-attribute: "version"
+            source: "output"
+            source-key: "workspace_crd_version"
+          - api-attribute: "plural"
+            source: "output"
+            source-key: "workspace_crd_plural"
+          - api-attribute: "scope"
+            source: "cli"
+            source-key: "scope"
+          - api-attribute: "name"
+            source: "cli"
+            source-key: "name"
+    results:
+      - result-name: "open.server.url"
+        source: "result"
+        source-key: "[0].Resource"
+        extract: "status.accessURL"
 secrets:
   - name: oauth_app_client_secret
     source: output

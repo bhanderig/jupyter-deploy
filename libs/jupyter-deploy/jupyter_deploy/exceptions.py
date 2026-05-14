@@ -319,6 +319,44 @@ class HostCommandInstructionError(InstructionError, RuntimeError):
         super().__init__(message)
 
 
+class ResourceNameRequiredError(JupyterDeployError, ValueError):
+    """Raised when a resource name is required but not provided.
+
+    Attributes:
+        resource_type: The type of resource (e.g., 'host', 'server')
+        list_command: The CLI command to list available resources
+    """
+
+    def __init__(self, resource_type: str, list_command: str) -> None:
+        self.resource_type = resource_type
+        self.list_command = list_command
+        super().__init__(
+            f"This template manages multiple {resource_type}s. "
+            f"Specify a name — use {list_command} to see available {resource_type}s."
+        )
+
+
+class ResourceNotFoundError(InstructionError, RuntimeError):
+    """Raised when a provider resource is not found (e.g., node, pod, deployment).
+
+    Attributes:
+        resource_kind: The kind of resource (e.g., 'node', 'pod', 'workspace')
+        resource_name: The name that was looked up
+        original_message: Original error message from the provider SDK
+        scope: Optional namespace or scope where the resource was looked up
+    """
+
+    def __init__(self, resource_kind: str, resource_name: str, original_message: str, scope: str | None = None) -> None:
+        self.resource_kind = resource_kind
+        self.resource_name = resource_name
+        self.original_message = original_message
+        self.scope = scope
+        msg = f"{resource_kind} '{resource_name}' not found"
+        if scope:
+            msg += f" in '{scope}'"
+        super().__init__(msg)
+
+
 class InstructionNotFoundError(InstructionError, RuntimeError):
     """Raised when an instruction cannot be found or is not implemented."""
 

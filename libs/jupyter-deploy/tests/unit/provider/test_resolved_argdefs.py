@@ -156,6 +156,55 @@ class TestResolveResultArgDef(unittest.TestCase):
         self.assertIn(CustomResolvedInstructionResult.__name__, str(context.exception))
 
 
+class TestResolveResultArgDefExtract(unittest.TestCase):
+    def test_extracts_nested_string_value(self) -> None:
+        resultdefs: dict[str, ResolvedInstructionResult] = {
+            "resource": StrResolvedInstructionResult(
+                result_name="resource", value='{"status": {"deploymentName": "my-deploy"}}'
+            ),
+        }
+
+        result = resolve_result_argdef(
+            resultdefs=resultdefs, arg_name="name", source_key="resource", extract="status.deploymentName"
+        )
+
+        self.assertIsInstance(result, StrResolvedInstructionArgument)
+        self.assertEqual(result.value, "my-deploy")
+
+    def test_extracts_nested_object_as_json(self) -> None:
+        resultdefs: dict[str, ResolvedInstructionResult] = {
+            "resource": StrResolvedInstructionResult(
+                result_name="resource", value='{"spec": {"template": {"containers": []}}}'
+            ),
+        }
+
+        result = resolve_result_argdef(
+            resultdefs=resultdefs, arg_name="tmpl", source_key="resource", extract="spec.template"
+        )
+
+        self.assertIsInstance(result, StrResolvedInstructionArgument)
+        self.assertEqual(result.value, '{"containers": []}')
+
+    def test_raises_key_error_for_missing_path_segment(self) -> None:
+        resultdefs: dict[str, ResolvedInstructionResult] = {
+            "resource": StrResolvedInstructionResult(result_name="resource", value='{"status": {}}'),
+        }
+
+        with self.assertRaises(KeyError):
+            resolve_result_argdef(
+                resultdefs=resultdefs, arg_name="name", source_key="resource", extract="status.deploymentName"
+            )
+
+    def test_no_extract_returns_original_value(self) -> None:
+        resultdefs: dict[str, ResolvedInstructionResult] = {
+            "resource": StrResolvedInstructionResult(result_name="resource", value='{"status": "ok"}'),
+        }
+
+        result = resolve_result_argdef(resultdefs=resultdefs, arg_name="val", source_key="resource", extract=None)
+
+        self.assertEqual(result.value, '{"status": "ok"}')
+
+
 class TestResolveCliParamArgDef(unittest.TestCase):
     def test_resolves_all_cli_parameter_types(self) -> None:
         # Arrange

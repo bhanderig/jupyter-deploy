@@ -46,7 +46,7 @@
   <div class="step">
     <pre>kubectl get Workspaces</pre>
     <p>To get a workspace's access URL:</p>
-    <pre>kubectl get Workspace my-workspace -o jsonpath='{.spec.accessURL}'; echo</pre>
+    <pre>kubectl get Workspace my-workspace -o jsonpath='{.status.accessURL}'; echo</pre>
     <p>Once the workspace is <code>Available</code>, open the access URL in your browser.</p>
   </div>
 

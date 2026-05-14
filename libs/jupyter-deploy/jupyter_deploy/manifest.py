@@ -60,6 +60,7 @@ class JupyterDeployInstructionArgumentV1(BaseModel):
     api_attribute: str = Field(alias="api-attribute")
     source: str
     source_key: str = Field(alias="source-key")
+    extract: str | None = None
 
     def get_source_type(self) -> InstructionArgumentSource:
         """Return the instruction argument source type."""
@@ -72,6 +73,7 @@ class JupyterDeployInstructionResultV1(BaseModel):
     source: str
     source_key: str = Field(alias="source-key")
     transform: str | None = None
+    extract: str | None = None
 
     def get_source_type(self) -> ResultSource:
         """Return the instruction argument source type."""
@@ -234,6 +236,18 @@ class JupyterDeploySupervisedExecutionV1(BaseModel):
     down: dict[str, JupyterDeploySupervisedCommandExecutionV1] | None = None
 
 
+class JupyterDeployStatusRuleMatchV1(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    path: str
+    equals: str
+
+
+class JupyterDeployStatusRuleV1(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    display: str
+    all: list[JupyterDeployStatusRuleMatchV1]
+
+
 class JupyterDeployProjectStoreV1(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
     store_type: str = Field(alias="store-type")
@@ -257,8 +271,11 @@ class JupyterDeployManifestV1(BaseModel):
     requirements: list[JupyterDeployRequirementV1] | None = None
     values: list[JupyterDeployValueV1] | None = None
     services: list[str] | None = None
+    multi_host: bool = Field(alias="multi-host", default=False)
+    multi_server: bool = Field(alias="multi-server", default=False)
     commands: list[JupyterDeployCommandV1] | None = None
     secrets: list[JupyterDeploySecretV1] | None = None
+    server_status_rules: list[JupyterDeployStatusRuleV1] | None = Field(alias="server-status-rules", default=None)
     supervised_execution: JupyterDeploySupervisedExecutionV1 | None = Field(alias="supervised-execution", default=None)
     project_store: JupyterDeployProjectStoreV1 | None = Field(alias="project-store", default=None)
 

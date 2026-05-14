@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -16,7 +17,7 @@ class TestServersApp(unittest.TestCase):
         result = runner.invoke(servers_app, ["--help"])
 
         self.assertEqual(result.exit_code, 0)
-        for cmd in ["status", "start", "stop", "restart"]:
+        for cmd in ["status", "start", "stop", "restart", "list", "show"]:
             self.assertTrue(result.stdout.index(cmd) > 0, f"missing command: {cmd}")
 
     def test_no_arg_defaults_to_help(self) -> None:
@@ -172,7 +173,7 @@ class TestServerStartCmd(unittest.TestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         mock_server_handler_class.assert_called_once()
-        mock_handler_fns["start_server"].assert_called_once_with("all")
+        mock_handler_fns["start_server"].assert_called_once_with("all", name=None, scope=None)
 
     @patch("jupyter_deploy.cli.servers_app.SimpleDisplayManager")
     @patch("jupyter_deploy.cli.servers_app.Console")
@@ -270,7 +271,20 @@ class TestServerStartCmd(unittest.TestCase):
 
         # Assert
         self.assertEqual(result.exit_code, 0)
-        mock_handler_fns["start_server"].assert_called_once_with("jupyter")
+        mock_handler_fns["start_server"].assert_called_once_with("jupyter", name=None, scope=None)
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_name_and_scope(self, mock_project_dir: Mock, mock_server_handler_class: Mock) -> None:
+        mock_server_handler, mock_handler_fns = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["start", "--name", "my-ws", "--scope", "team-a"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["start_server"].assert_called_once_with("all", name="my-ws", scope="team-a")
 
 
 class TestServerStopCmd(unittest.TestCase):
@@ -307,7 +321,7 @@ class TestServerStopCmd(unittest.TestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         mock_server_handler_class.assert_called_once()
-        mock_handler_fns["stop_server"].assert_called_once_with("all")
+        mock_handler_fns["stop_server"].assert_called_once_with("all", name=None, scope=None)
 
     @patch("jupyter_deploy.cli.servers_app.SimpleDisplayManager")
     @patch("jupyter_deploy.cli.servers_app.Console")
@@ -405,7 +419,20 @@ class TestServerStopCmd(unittest.TestCase):
 
         # Assert
         self.assertEqual(result.exit_code, 0)
-        mock_handler_fns["stop_server"].assert_called_once_with("jupyter")
+        mock_handler_fns["stop_server"].assert_called_once_with("jupyter", name=None, scope=None)
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_name_and_scope(self, mock_project_dir: Mock, mock_server_handler_class: Mock) -> None:
+        mock_server_handler, mock_handler_fns = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["stop", "--name", "my-ws", "--scope", "team-a"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["stop_server"].assert_called_once_with("all", name="my-ws", scope="team-a")
 
 
 class TestServerRestartCmd(unittest.TestCase):
@@ -442,7 +469,7 @@ class TestServerRestartCmd(unittest.TestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         mock_server_handler_class.assert_called_once()
-        mock_handler_fns["restart_server"].assert_called_once_with("all")
+        mock_handler_fns["restart_server"].assert_called_once_with("all", name=None, scope=None)
 
     @patch("jupyter_deploy.cli.servers_app.SimpleDisplayManager")
     @patch("jupyter_deploy.cli.servers_app.Console")
@@ -540,7 +567,20 @@ class TestServerRestartCmd(unittest.TestCase):
 
         # Assert
         self.assertEqual(result.exit_code, 0)
-        mock_handler_fns["restart_server"].assert_called_once_with("jupyter")
+        mock_handler_fns["restart_server"].assert_called_once_with("jupyter", name=None, scope=None)
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_name_and_scope(self, mock_project_dir: Mock, mock_server_handler_class: Mock) -> None:
+        mock_server_handler, mock_handler_fns = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["restart", "--name", "my-ws", "--scope", "team-a"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["restart_server"].assert_called_once_with("all", name="my-ws", scope="team-a")
 
 
 class TestServerLogsCmd(unittest.TestCase):
@@ -598,7 +638,7 @@ class TestServerLogsCmd(unittest.TestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         mock_server_handler_class.assert_called_once()
-        mock_handler_fns["get_server_logs"].assert_called_once_with(service="default", extra=[])
+        mock_handler_fns["get_server_logs"].assert_called_once_with(service="default", extra=[], name=None, scope=None)
         mock_console.print.assert_called()
         mock_console.rule.assert_called()
 
@@ -686,6 +726,41 @@ class TestServerLogsCmd(unittest.TestCase):
         self.assertTrue("no logs were retrieved" in mock_call[1][0])
         self.assertTrue("yellow" in mock_call[2]["style"])
 
+    @patch("jupyter_deploy.cli.servers_app.SimpleDisplayManager")
+    @patch("jupyter_deploy.cli.servers_app.Console")
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_name_and_scope(
+        self,
+        mock_project_dir: Mock,
+        mock_server_handler_class: Mock,
+        mock_console_class: Mock,
+        mock_simple_display_manager_class: Mock,
+    ) -> None:
+        mock_server_handler, mock_handler_fns = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        mock_console = Mock()
+        mock_console_class.return_value = mock_console
+
+        mock_spinner = Mock()
+        mock_spinner.__enter__ = Mock(return_value=None)
+        mock_spinner.__exit__ = Mock(return_value=None)
+        mock_simple_display_manager = Mock()
+        mock_simple_display_manager.spinner.return_value = mock_spinner
+        mock_simple_display_manager_class.return_value = mock_simple_display_manager
+
+        mock_handler_fns["get_server_logs"].return_value = "some-logs", "", 0
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["logs", "--name", "my-ws", "--scope", "team-a"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["get_server_logs"].assert_called_once_with(
+            service="default", extra=[], name="my-ws", scope="team-a"
+        )
+
     @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
     @patch("jupyter_deploy.cmd_utils.project_dir")
     def test_instantiates_raises_when_server_handler_raises(
@@ -763,12 +838,14 @@ class TestServerExecCmd(unittest.TestCase):
 
         # Execute
         runner = CliRunner()
-        result = runner.invoke(servers_app, ["exec", "-s", "jupyter", "--", "pwd"])
+        result = runner.invoke(servers_app, ["exec", "--name", "my-ws", "-s", "jupyter", "--", "pwd"])
 
         # Assert
         self.assertEqual(result.exit_code, 0)
         mock_server_handler_class.assert_called_once()
-        mock_handler_fns["exec_command"].assert_called_once_with(service="jupyter", command_args=["pwd"])
+        mock_handler_fns["exec_command"].assert_called_once_with(
+            service="jupyter", command_args=["pwd"], name="my-ws", scope=None
+        )
 
     @patch("jupyter_deploy.cli.servers_app.Console")
     @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
@@ -783,11 +860,13 @@ class TestServerExecCmd(unittest.TestCase):
 
         # Execute
         runner = CliRunner()
-        result = runner.invoke(servers_app, ["exec", "-s", "jupyter", "--", "ls", "-la"])
+        result = runner.invoke(servers_app, ["exec", "--name", "my-ws", "-s", "jupyter", "--", "ls", "-la"])
 
         # Assert
         self.assertEqual(result.exit_code, 0)
-        mock_handler_fns["exec_command"].assert_called_once_with(service="jupyter", command_args=["ls", "-la"])
+        mock_handler_fns["exec_command"].assert_called_once_with(
+            service="jupyter", command_args=["ls", "-la"], name="my-ws", scope=None
+        )
 
     @patch("jupyter_deploy.cli.servers_app.SimpleDisplayManager")
     @patch("jupyter_deploy.cli.servers_app.Console")
@@ -818,7 +897,7 @@ class TestServerExecCmd(unittest.TestCase):
 
         # Execute
         runner = CliRunner()
-        result = runner.invoke(servers_app, ["exec", "-s", "jupyter", "--", "whoami"])
+        result = runner.invoke(servers_app, ["exec", "--name", "my-ws", "-s", "jupyter", "--", "whoami"])
 
         # Assert
         self.assertEqual(result.exit_code, 0)
@@ -841,11 +920,13 @@ class TestServerExecCmd(unittest.TestCase):
 
         # Execute
         runner = CliRunner()
-        result = runner.invoke(servers_app, ["exec", "-s", "jupyter", "--", "false"])
+        result = runner.invoke(servers_app, ["exec", "--name", "my-ws", "-s", "jupyter", "--", "false"])
 
         # Assert
         self.assertEqual(result.exit_code, 1)
-        mock_handler_fns["exec_command"].assert_called_once_with(service="jupyter", command_args=["false"])
+        mock_handler_fns["exec_command"].assert_called_once_with(
+            service="jupyter", command_args=["false"], name="my-ws", scope=None
+        )
 
     @patch("jupyter_deploy.cli.servers_app.Console")
     def test_fails_when_no_command_provided(self, mock_console_class: Mock) -> None:
@@ -855,7 +936,7 @@ class TestServerExecCmd(unittest.TestCase):
 
         # Execute
         runner = CliRunner()
-        result = runner.invoke(servers_app, ["exec", "-s", "jupyter"])
+        result = runner.invoke(servers_app, ["exec", "--name", "my-ws", "-s", "jupyter"])
 
         # Assert
         self.assertEqual(result.exit_code, 1)
@@ -892,7 +973,7 @@ class TestServerExecCmd(unittest.TestCase):
 
         # Execute
         runner = CliRunner()
-        result = runner.invoke(servers_app, ["exec", "-s", "invalid_service", "--", "pwd"])
+        result = runner.invoke(servers_app, ["exec", "--name", "my-ws", "-s", "invalid_service", "--", "pwd"])
 
         # Assert
         self.assertEqual(result.exit_code, 1)
@@ -902,6 +983,41 @@ class TestServerExecCmd(unittest.TestCase):
         first_call = mock_console.print.mock_calls[0]
         self.assertTrue("Invalid service" in first_call[1][0])
         self.assertTrue("red" in first_call[2]["style"])
+
+    @patch("jupyter_deploy.cli.servers_app.SimpleDisplayManager")
+    @patch("jupyter_deploy.cli.servers_app.Console")
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_name_and_scope(
+        self,
+        mock_project_dir: Mock,
+        mock_server_handler_class: Mock,
+        mock_console_class: Mock,
+        mock_simple_display_manager_class: Mock,
+    ) -> None:
+        mock_server_handler, mock_handler_fns = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        mock_console = Mock()
+        mock_console_class.return_value = mock_console
+
+        mock_spinner = Mock()
+        mock_spinner.__enter__ = Mock(return_value=None)
+        mock_spinner.__exit__ = Mock(return_value=None)
+        mock_simple_display_manager = Mock()
+        mock_simple_display_manager.spinner.return_value = mock_spinner
+        mock_simple_display_manager_class.return_value = mock_simple_display_manager
+
+        runner = CliRunner()
+        result = runner.invoke(
+            servers_app, ["exec", "--name", "my-ws", "--scope", "team-a", "-s", "jupyter", "--", "pwd"]
+        )
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["exec_command"].assert_called_once_with(
+            service="jupyter", command_args=["pwd"], name="my-ws", scope="team-a"
+        )
 
     @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
     @patch("jupyter_deploy.cmd_utils.project_dir")
@@ -916,7 +1032,7 @@ class TestServerExecCmd(unittest.TestCase):
 
         # Execute
         runner = CliRunner()
-        result = runner.invoke(servers_app, ["exec", "-s", "jupyter", "--", "whoami"])
+        result = runner.invoke(servers_app, ["exec", "--name", "my-ws", "-s", "jupyter", "--", "whoami"])
 
         # Assert
         self.assertNotEqual(result.exit_code, 0)
@@ -985,7 +1101,7 @@ class TestServerConnectCmd(unittest.TestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         mock_server_handler_class.assert_called_once()
-        mock_handler_fns["connect"].assert_called_once_with(service="jupyter")
+        mock_handler_fns["connect"].assert_called_once_with(service="jupyter", name=None, scope=None)
 
     @patch("jupyter_deploy.cli.servers_app.SimpleDisplayManager")
     @patch("jupyter_deploy.cli.servers_app.Console")
@@ -1016,7 +1132,7 @@ class TestServerConnectCmd(unittest.TestCase):
 
         # Assert
         self.assertEqual(result.exit_code, 0)
-        mock_handler_fns["connect"].assert_called_once_with(service="default")
+        mock_handler_fns["connect"].assert_called_once_with(service="default", name=None, scope=None)
 
     @patch("jupyter_deploy.cli.servers_app.SimpleDisplayManager")
     @patch("jupyter_deploy.cli.servers_app.Console")
@@ -1059,6 +1175,34 @@ class TestServerConnectCmd(unittest.TestCase):
         self.assertTrue("Invalid service" in first_call[1][0])
         self.assertTrue("red" in first_call[2]["style"])
 
+    @patch("jupyter_deploy.cli.servers_app.SimpleDisplayManager")
+    @patch("jupyter_deploy.cli.servers_app.Console")
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_name_and_scope(
+        self,
+        mock_project_dir: Mock,
+        mock_server_handler_class: Mock,
+        mock_console_class: Mock,
+        mock_simple_display_manager_class: Mock,
+    ) -> None:
+        mock_server_handler, mock_handler_fns = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        mock_spinner = Mock()
+        mock_spinner.__enter__ = Mock(return_value=None)
+        mock_spinner.__exit__ = Mock(return_value=None)
+        mock_simple_display_manager = Mock()
+        mock_simple_display_manager.spinner.return_value = mock_spinner
+        mock_simple_display_manager_class.return_value = mock_simple_display_manager
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["connect", "--name", "my-ws", "--scope", "team-a", "-s", "jupyter"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["connect"].assert_called_once_with(service="jupyter", name="my-ws", scope="team-a")
+
     @patch("jupyter_deploy.cli.servers_app.Console")
     @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
     @patch("jupyter_deploy.cmd_utils.project_dir")
@@ -1076,4 +1220,222 @@ class TestServerConnectCmd(unittest.TestCase):
         result = runner.invoke(servers_app, ["connect", "-s", "jupyter"])
 
         # Assert
+        self.assertNotEqual(result.exit_code, 0)
+
+
+class TestServerListCmd(unittest.TestCase):
+    def get_mock_server_handler(self) -> tuple[Mock, dict[str, Mock]]:
+        mock_list_servers = Mock()
+        mock_server_handler = Mock()
+
+        mock_server_handler.list_servers = mock_list_servers
+        mock_list_servers.return_value = ("ws-1,ws-2", None)
+
+        return mock_server_handler, {
+            "list_servers": mock_list_servers,
+        }
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_instantiates_server_handler_and_calls_list(
+        self, mock_project_dir: Mock, mock_server_handler_class: Mock
+    ) -> None:
+        mock_server_handler, mock_handler_fns = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["list"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_server_handler_class.assert_called_once()
+        mock_handler_fns["list_servers"].assert_called_once_with(scope=None, limit=None, continue_from=None)
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_scope_option(self, mock_project_dir: Mock, mock_server_handler_class: Mock) -> None:
+        mock_server_handler, mock_handler_fns = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["list", "--scope", "team-a"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["list_servers"].assert_called_once_with(scope="team-a", limit=None, continue_from=None)
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_pagination_options(self, mock_project_dir: Mock, mock_server_handler_class: Mock) -> None:
+        mock_server_handler, mock_handler_fns = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["list", "-n", "5", "--continue-from", "token-abc"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["list_servers"].assert_called_once_with(scope=None, limit=5, continue_from="token-abc")
+
+    @patch("jupyter_deploy.cli.servers_app.SimpleDisplayManager")
+    @patch("jupyter_deploy.cli.servers_app.Console")
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_prints_next_token_when_present(
+        self,
+        mock_project_dir: Mock,
+        mock_server_handler_class: Mock,
+        mock_console_class: Mock,
+        mock_simple_display_manager_class: Mock,
+    ) -> None:
+        mock_server_handler = Mock()
+        mock_server_handler.list_servers.return_value = ("ws-1", "next-token-xyz")
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        mock_console = Mock()
+        mock_console_class.return_value = mock_console
+
+        mock_spinner = Mock()
+        mock_spinner.__enter__ = Mock(return_value=None)
+        mock_spinner.__exit__ = Mock(return_value=None)
+        mock_simple_display_manager = Mock()
+        mock_simple_display_manager.spinner.return_value = mock_spinner
+        mock_simple_display_manager_class.return_value = mock_simple_display_manager
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["list", "-n", "1"])
+
+        self.assertEqual(result.exit_code, 0)
+        print_calls = [str(call) for call in mock_console.print.mock_calls]
+        self.assertTrue(any("next-token-xyz" in call for call in print_calls))
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_switches_dir_when_passed_a_project(self, mock_project_dir: Mock, mock_server_handler_class: Mock) -> None:
+        mock_server_handler, _ = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["list", "--path", "/test/project/path"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_project_dir.assert_called_once_with(Path("/test/project/path"))
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_json_output_with_pagination_token(self, mock_project_dir: Mock, mock_server_handler_class: Mock) -> None:
+        mock_server_handler = Mock()
+        mock_server_handler.list_servers.return_value = (["ws-1", "ws-2"], "next-page-token")
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["list", "--json"])
+
+        self.assertEqual(result.exit_code, 0)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["servers"], ["ws-1", "ws-2"])
+        self.assertEqual(data["continue_from"], "next-page-token")
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_json_output_without_pagination_token(
+        self, mock_project_dir: Mock, mock_server_handler_class: Mock
+    ) -> None:
+        mock_server_handler = Mock()
+        mock_server_handler.list_servers.return_value = (["ws-1", "ws-2"], None)
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["list", "--json"])
+
+        self.assertEqual(result.exit_code, 0)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["servers"], ["ws-1", "ws-2"])
+        self.assertNotIn("continue_from", data)
+
+
+class TestServerShowCmd(unittest.TestCase):
+    def get_mock_server_handler(self) -> tuple[Mock, dict[str, Mock]]:
+        mock_show_server = Mock()
+        mock_server_handler = Mock()
+
+        mock_server_handler.show_server = mock_show_server
+        mock_show_server.return_value = {"name": "my-ws", "resource": '{"spec": {}}'}
+
+        return mock_server_handler, {
+            "show_server": mock_show_server,
+        }
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_instantiates_server_handler_and_calls_show(
+        self, mock_project_dir: Mock, mock_server_handler_class: Mock
+    ) -> None:
+        mock_server_handler, mock_handler_fns = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["show", "--name", "my-ws"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_server_handler_class.assert_called_once()
+        mock_handler_fns["show_server"].assert_called_once_with(name="my-ws", scope=None)
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_passes_scope_option(self, mock_project_dir: Mock, mock_server_handler_class: Mock) -> None:
+        mock_server_handler, mock_handler_fns = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["show", "--name", "my-ws", "--scope", "team-a"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_handler_fns["show_server"].assert_called_once_with(name="my-ws", scope="team-a")
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_requires_name_option(self, mock_project_dir: Mock, mock_server_handler_class: Mock) -> None:
+        mock_server_handler, _ = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["show"])
+
+        self.assertNotEqual(result.exit_code, 0)
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_json_output(self, mock_project_dir: Mock, mock_server_handler_class: Mock) -> None:
+        mock_server_handler = Mock()
+        mock_server_handler.show_server.return_value = {"name": "my-ws", "resource": '{"spec": {}}'}
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["show", "--name", "my-ws", "--json"])
+
+        self.assertEqual(result.exit_code, 0)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["name"], "my-ws")
+        self.assertIn("resource", data)
+
+    @patch("jupyter_deploy.handlers.resource.server_handler.ServerHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_raises_when_handler_raises(self, mock_project_dir: Mock, mock_server_handler_class: Mock) -> None:
+        mock_server_handler, mock_handler_fns = self.get_mock_server_handler()
+        mock_server_handler_class.return_value = mock_server_handler
+        mock_handler_fns["show_server"].side_effect = Exception("Test error")
+        mock_project_dir.return_value.__enter__.return_value = None
+
+        runner = CliRunner()
+        result = runner.invoke(servers_app, ["show", "--name", "my-ws"])
+
         self.assertNotEqual(result.exit_code, 0)

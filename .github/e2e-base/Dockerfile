@@ -79,7 +79,9 @@ RUN if [ "$INSTALL_MODE" = "pypi" ]; then \
     else \
         cd /workspace && \
         rm -f .github/e2e-base/pyproject.release.toml .github/e2e-base/pyproject.canary.toml && \
-        uv sync --all-packages; \
+        uv sync --all-packages && \
+        uv run playwright install firefox && \
+        ln -sf ~/.cache/ms-playwright/firefox-*/firefox/firefox ~/.local/bin/firefox; \
     fi
 
 CMD ["sleep", "infinity"]

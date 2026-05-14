@@ -40,7 +40,7 @@ class TestOpenCommand(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0)
         mock_project_ctx_manager.assert_called_once_with(None)
-        mock_open_fns["open"].assert_called_once()
+        mock_open_fns["open"].assert_called_once_with(name=None, scope=None)
 
     @patch("jupyter_deploy.cli.app.OpenHandler")
     @patch("jupyter_deploy.cmd_utils.project_dir")
@@ -54,7 +54,7 @@ class TestOpenCommand(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0)
         mock_project_ctx_manager.assert_called_once_with(Path("/custom/path"))
-        mock_open_fns["open"].assert_called_once()
+        mock_open_fns["open"].assert_called_once_with(name=None, scope=None)
 
     @patch("jupyter_deploy.cli.app.OpenHandler")
     @patch("jupyter_deploy.cmd_utils.project_dir")
@@ -72,7 +72,7 @@ class TestOpenCommand(unittest.TestCase):
         result = runner.invoke(app_runner.app, ["open"])
 
         self.assertEqual(result.exit_code, 1)
-        mock_open_fns["open"].assert_called_once()
+        mock_open_fns["open"].assert_called_once_with(name=None, scope=None)
         self.assertIn("Failed to open URL in browser", result.output)
 
     @patch("jupyter_deploy.cli.app.OpenHandler")
@@ -267,7 +267,7 @@ class TestOpenCommand(unittest.TestCase):
         result = runner.invoke(app_runner.app, ["open"])
 
         self.assertNotEqual(result.exit_code, 0)
-        mock_open_fns["open"].assert_called_once()
+        mock_open_fns["open"].assert_called_once_with(name=None, scope=None)
 
     @patch("jupyter_deploy.cli.app.OpenHandler")
     @patch("jupyter_deploy.cmd_utils.project_dir")
@@ -315,3 +315,49 @@ class TestOpenCommand(unittest.TestCase):
         # Should display the error message
         self.assertIn("Insecure URL detected", result.output)
         self.assertIn("HTTPS", result.output)
+
+    @patch("jupyter_deploy.cli.app.OpenHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_open_command_with_server_name(self, mock_project_ctx_manager: Mock, mock_open_handler_cls: Mock) -> None:
+        """Test that open command passes server name to handler."""
+        mock_open_handler_instance, mock_open_fns = self.get_mock_open_handler()
+        mock_open_fns["open"].return_value = "https://example.com/workspaces/default/my-ws/"
+        mock_open_handler_cls.return_value = mock_open_handler_instance
+
+        runner = CliRunner()
+        result = runner.invoke(app_runner.app, ["open", "--name", "my-ws"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_open_fns["open"].assert_called_once_with(name="my-ws", scope=None)
+        self.assertIn("Opening app at:", result.output)
+
+    @patch("jupyter_deploy.cli.app.OpenHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_open_command_with_server_name_and_scope(
+        self, mock_project_ctx_manager: Mock, mock_open_handler_cls: Mock
+    ) -> None:
+        """Test that open command passes server name and scope to handler."""
+        mock_open_handler_instance, mock_open_fns = self.get_mock_open_handler()
+        mock_open_fns["open"].return_value = "https://example.com/workspaces/team-a/my-ws/"
+        mock_open_handler_cls.return_value = mock_open_handler_instance
+
+        runner = CliRunner()
+        result = runner.invoke(app_runner.app, ["open", "--name", "my-ws", "--scope", "team-a"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_open_fns["open"].assert_called_once_with(name="my-ws", scope="team-a")
+
+    @patch("jupyter_deploy.cli.app.OpenHandler")
+    @patch("jupyter_deploy.cmd_utils.project_dir")
+    def test_open_command_scope_without_server_name(
+        self, mock_project_ctx_manager: Mock, mock_open_handler_cls: Mock
+    ) -> None:
+        """Test that open command with only --scope still opens the default URL."""
+        mock_open_handler_instance, mock_open_fns = self.get_mock_open_handler()
+        mock_open_handler_cls.return_value = mock_open_handler_instance
+
+        runner = CliRunner()
+        result = runner.invoke(app_runner.app, ["open", "--scope", "team-a"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_open_fns["open"].assert_called_once_with(name=None, scope="team-a")

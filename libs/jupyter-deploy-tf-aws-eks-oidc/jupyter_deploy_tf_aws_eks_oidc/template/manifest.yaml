@@ -17,9 +17,63 @@ values:
 - name: aws_region
   source: output
   source-key: region
+- name: kubeconfig_path
+  source: output
+  source-key: kubeconfig_path
+- name: workspace_shared_namespace
+  source: output
+  source-key: workspace_shared_namespace
+- name: cluster_name
+  source: output
+  source-key: cluster_name
+- name: cluster_endpoint
+  source: output
+  source-key: cluster_endpoint
+- name: cluster_ca_certificate
+  source: output
+  source-key: cluster_ca_certificate
+- name: workspace_base_url
+  source: output
+  source-key: workspace_base_url
+- name: workspace_patch_start
+  source: output
+  source-key: workspace_patch_start
+- name: workspace_patch_stop
+  source: output
+  source-key: workspace_patch_stop
+- name: server_default_scope
+  source: output
+  source-key: server_default_scope
 project-store:
   store-type: s3-only
+multi-host: true
+multi-server: true
 services: []
+server-status-rules:
+- display: Degraded
+  all:
+  - path: .status.conditions[type=Degraded].status
+    equals: "True"
+- display: Starting
+  all:
+  - path: .status.conditions[type=Progressing].status
+    equals: "True"
+  - path: .spec.desiredStatus
+    equals: Running
+- display: Stopping
+  all:
+  - path: .status.conditions[type=Progressing].status
+    equals: "True"
+  - path: .spec.desiredStatus
+    equals: Stopped
+- display: Stopped
+  all:
+  - path: .status.conditions[type=Stopped].status
+    equals: "True"
+- display: Running
+  all:
+  - path: .status.conditions[type=Available].status
+    equals: "True"
 secrets:
 - name: oauth_app_client_secret
   source: output
@@ -36,6 +90,322 @@ commands:
   - result-name: secret-value
     source: result
     source-key: '[0].SecretString'
+- cmd: host.list
+  sequence:
+  - api-name: k8s.core.list-nodes
+    arguments:
+    - api-attribute: query
+      source: cli
+      source-key: query
+    - api-attribute: page_size
+      source: cli
+      source-key: limit
+    - api-attribute: pagination_token
+      source: cli
+      source-key: continue_from
+  results:
+  - result-name: host.list
+    source: result
+    source-key: '[0].NodeNames'
+  - result-name: host.list.next_token
+    source: result
+    source-key: '[0].NextToken'
+- cmd: host.status
+  sequence:
+  - api-name: k8s.core.get-node
+    arguments:
+    - api-attribute: name
+      source: cli
+      source-key: name
+  results:
+  - result-name: host.status
+    source: result
+    source-key: '[0].Status'
+- cmd: host.show
+  sequence:
+  - api-name: k8s.core.get-node
+    arguments:
+    - api-attribute: name
+      source: cli
+      source-key: name
+  results:
+  - result-name: host.show.name
+    source: result
+    source-key: '[0].Name'
+  - result-name: host.show.status
+    source: result
+    source-key: '[0].Status'
+  - result-name: host.show.resource
+    source: result
+    source-key: '[0].Resource'
+- cmd: server.list
+  sequence:
+  - api-name: k8s.custom.list
+    arguments:
+    - api-attribute: group
+      source: output
+      source-key: workspace_crd_group
+    - api-attribute: version
+      source: output
+      source-key: workspace_crd_version
+    - api-attribute: plural
+      source: output
+      source-key: workspace_crd_plural
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: page_size
+      source: cli
+      source-key: limit
+    - api-attribute: pagination_token
+      source: cli
+      source-key: continue_from
+  results:
+  - result-name: server.list
+    source: result
+    source-key: '[0].Names'
+  - result-name: server.list.items
+    source: result
+    source-key: '[0].Items'
+  - result-name: server.list.next_token
+    source: result
+    source-key: '[0].NextToken'
+- cmd: server.status
+  sequence:
+  - api-name: k8s.custom.get
+    arguments:
+    - api-attribute: group
+      source: output
+      source-key: workspace_crd_group
+    - api-attribute: version
+      source: output
+      source-key: workspace_crd_version
+    - api-attribute: plural
+      source: output
+      source-key: workspace_crd_plural
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: name
+      source: cli
+      source-key: name
+  results:
+  - result-name: server.status
+    source: result
+    source-key: '[0].Name'
+  - result-name: server.status.resource
+    source: result
+    source-key: '[0].Resource'
+- cmd: server.show
+  sequence:
+  - api-name: k8s.custom.get
+    arguments:
+    - api-attribute: group
+      source: output
+      source-key: workspace_crd_group
+    - api-attribute: version
+      source: output
+      source-key: workspace_crd_version
+    - api-attribute: plural
+      source: output
+      source-key: workspace_crd_plural
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: name
+      source: cli
+      source-key: name
+  results:
+  - result-name: server.show.name
+    source: result
+    source-key: '[0].Name'
+  - result-name: server.show.resource
+    source: result
+    source-key: '[0].Resource'
+- cmd: server.start
+  sequence:
+  - api-name: k8s.custom.patch
+    arguments:
+    - api-attribute: group
+      source: output
+      source-key: workspace_crd_group
+    - api-attribute: version
+      source: output
+      source-key: workspace_crd_version
+    - api-attribute: plural
+      source: output
+      source-key: workspace_crd_plural
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: name
+      source: cli
+      source-key: name
+    - api-attribute: body
+      source: output
+      source-key: workspace_patch_start
+- cmd: server.stop
+  sequence:
+  - api-name: k8s.custom.patch
+    arguments:
+    - api-attribute: group
+      source: output
+      source-key: workspace_crd_group
+    - api-attribute: version
+      source: output
+      source-key: workspace_crd_version
+    - api-attribute: plural
+      source: output
+      source-key: workspace_crd_plural
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: name
+      source: cli
+      source-key: name
+    - api-attribute: body
+      source: output
+      source-key: workspace_patch_stop
+- cmd: server.logs
+  sequence:
+  - api-name: k8s.custom.get
+    arguments:
+    - api-attribute: group
+      source: output
+      source-key: workspace_crd_group
+    - api-attribute: version
+      source: output
+      source-key: workspace_crd_version
+    - api-attribute: plural
+      source: output
+      source-key: workspace_crd_plural
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: name
+      source: cli
+      source-key: name
+  - api-name: k8s.core.deployment-logs
+    arguments:
+    - api-attribute: name
+      source: result
+      source-key: '[0].Resource'
+      extract: status.deploymentName
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: container
+      source: cli
+      source-key: service
+    - api-attribute: tail_lines
+      source: cli
+      source-key: extra
+  results:
+  - result-name: server.logs
+    source: result
+    source-key: '[1].Logs'
+  - result-name: server.errors
+    source: result
+    source-key: '[1].Logs'
+- cmd: server.exec
+  sequence:
+  - api-name: k8s.custom.get
+    arguments:
+    - api-attribute: group
+      source: output
+      source-key: workspace_crd_group
+    - api-attribute: version
+      source: output
+      source-key: workspace_crd_version
+    - api-attribute: plural
+      source: output
+      source-key: workspace_crd_plural
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: name
+      source: cli
+      source-key: name
+  - api-name: k8s.core.exec-pod
+    arguments:
+    - api-attribute: deployment_name
+      source: result
+      source-key: '[0].Resource'
+      extract: status.deploymentName
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: command
+      source: cli
+      source-key: commands
+    - api-attribute: container
+      source: cli
+      source-key: service
+  results:
+  - result-name: server.exec.stdout
+    source: result
+    source-key: '[1].Stdout'
+  - result-name: server.exec.stderr
+    source: result
+    source-key: '[1].Stderr'
+  - result-name: server.exec.returncode
+    source: result
+    source-key: '[1].ReturnCode'
+- cmd: open.server
+  sequence:
+  - api-name: k8s.custom.get
+    arguments:
+    - api-attribute: group
+      source: output
+      source-key: workspace_crd_group
+    - api-attribute: version
+      source: output
+      source-key: workspace_crd_version
+    - api-attribute: plural
+      source: output
+      source-key: workspace_crd_plural
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: name
+      source: cli
+      source-key: name
+  results:
+  - result-name: open.server.url
+    source: result
+    source-key: '[0].Resource'
+    extract: status.accessURL
+- cmd: server.connect
+  sequence:
+  - api-name: k8s.custom.get
+    arguments:
+    - api-attribute: group
+      source: output
+      source-key: workspace_crd_group
+    - api-attribute: version
+      source: output
+      source-key: workspace_crd_version
+    - api-attribute: plural
+      source: output
+      source-key: workspace_crd_plural
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: name
+      source: cli
+      source-key: name
+  - api-name: k8s.core.exec-pod-interactive
+    arguments:
+    - api-attribute: deployment_name
+      source: result
+      source-key: '[0].Resource'
+      extract: status.deploymentName
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: container
+      source: cli
+      source-key: service
 supervised-execution:
   config:
     config.terraform-plan:

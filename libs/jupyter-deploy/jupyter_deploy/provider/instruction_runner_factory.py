@@ -38,14 +38,38 @@ class InstructionRunnerFactory:
             return runner
 
         if api_group == ApiGroup.K8S:
-            kubeconfig_def = outputs_handler.get_declared_output_def("kubeconfig_path", StrTemplateOutputDefinition)
+            cluster_endpoint: str | None = None
+            cluster_ca_data: str | None = None
+            cluster_name: str | None = None
+            region: str | None = None
+            kubeconfig_path: str | None = None
+
+            try:
+                endpoint_def = outputs_handler.get_declared_output_def("cluster_endpoint", StrTemplateOutputDefinition)
+                ca_def = outputs_handler.get_declared_output_def("cluster_ca_certificate", StrTemplateOutputDefinition)
+                name_def = outputs_handler.get_declared_output_def("cluster_name", StrTemplateOutputDefinition)
+                region_def = outputs_handler.get_declared_output_def("aws_region", StrTemplateOutputDefinition)
+                cluster_endpoint = endpoint_def.value
+                cluster_ca_data = ca_def.value
+                cluster_name = name_def.value
+                region = region_def.value
+            except (NotImplementedError, KeyError, ValueError):
+                pass
+
+            if not all([cluster_endpoint, cluster_ca_data, cluster_name, region]):
+                kubeconfig_def = outputs_handler.get_declared_output_def("kubeconfig_path", StrTemplateOutputDefinition)
+                kubeconfig_path = kubeconfig_def.value
 
             # do NOT move import to top level
             from jupyter_deploy.provider.k8s import k8s_runner
 
             runner = k8s_runner.K8sApiRunner(
                 display_manager=display_manager,
-                kubeconfig_path=kubeconfig_def.value,
+                kubeconfig_path=kubeconfig_path,
+                cluster_endpoint=cluster_endpoint,
+                cluster_ca_data=cluster_ca_data,
+                cluster_name=cluster_name,
+                region=region,
             )
             InstructionRunnerFactory._api_group_runner_map[api_group] = runner
             return runner

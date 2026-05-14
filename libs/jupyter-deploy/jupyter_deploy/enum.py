@@ -203,6 +203,7 @@ class ProviderType(str, Enum):
     """Cloud provider types."""
 
     AWS = "AWS"
+    K8S = "Kubernetes"
 
     @classmethod
     def from_string(cls, value: str) -> "ProviderType":

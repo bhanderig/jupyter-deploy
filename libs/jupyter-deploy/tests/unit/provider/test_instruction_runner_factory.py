@@ -172,11 +172,21 @@ class TestInstructionRunnerFactory(unittest.TestCase):
             self.assertEqual({ApiGroup.AWS: self.mock_aws_api_runner}, InstructionRunnerFactory._api_group_runner_map)
             self.mock_aws_api_runner_cls.assert_called_once()
 
-    def test_imports_k8s_provider_at_runtime_only_and_return_it(self) -> None:
+    def test_imports_k8s_provider_with_eks_outputs_and_return_it(self) -> None:
         mock_outputs_handler = Mock(spec=EngineOutputsHandler)
-        mock_kubeconfig_def = Mock(spec=StrTemplateOutputDefinition)
-        mock_kubeconfig_def.value = "/tmp/kubeconfig"
-        mock_outputs_handler.get_declared_output_def.return_value = mock_kubeconfig_def
+
+        def _mock_get_declared(name: str, value_type: type) -> Mock:
+            values = {
+                "cluster_endpoint": "https://example.eks.amazonaws.com",
+                "cluster_ca_certificate": "Y2VydA==",
+                "cluster_name": "my-cluster",
+                "aws_region": "us-west-2",
+            }
+            mock_def = Mock(spec=StrTemplateOutputDefinition)
+            mock_def.value = values[name]
+            return mock_def
+
+        mock_outputs_handler.get_declared_output_def.side_effect = _mock_get_declared
 
         with self.patch_provider_runner_modules():
             importlib.reload(instruction_runner_factory)
@@ -187,12 +197,46 @@ class TestInstructionRunnerFactory(unittest.TestCase):
                 "k8s", mock_outputs_handler, NullDisplay()
             )
 
-            mock_outputs_handler.get_declared_output_def.assert_called_once_with(
-                "kubeconfig_path", StrTemplateOutputDefinition
-            )
             self.assertEqual(self.mock_k8s_api_runner, runner)
-            self.assertEqual({ApiGroup.K8S: self.mock_k8s_api_runner}, InstructionRunnerFactory._api_group_runner_map)
-            self.mock_k8s_api_runner_cls.assert_called_once_with(display_manager=ANY, kubeconfig_path="/tmp/kubeconfig")
+            self.mock_k8s_api_runner_cls.assert_called_once_with(
+                display_manager=ANY,
+                kubeconfig_path=None,
+                cluster_endpoint="https://example.eks.amazonaws.com",
+                cluster_ca_data="Y2VydA==",
+                cluster_name="my-cluster",
+                region="us-west-2",
+            )
+
+    def test_imports_k8s_provider_falls_back_to_kubeconfig(self) -> None:
+        mock_outputs_handler = Mock(spec=EngineOutputsHandler)
+
+        def _mock_get_declared(name: str, value_type: type) -> Mock:
+            if name == "kubeconfig_path":
+                mock_def = Mock(spec=StrTemplateOutputDefinition)
+                mock_def.value = "/tmp/kubeconfig"
+                return mock_def
+            raise NotImplementedError(f"No value: {name}")
+
+        mock_outputs_handler.get_declared_output_def.side_effect = _mock_get_declared
+
+        with self.patch_provider_runner_modules():
+            importlib.reload(instruction_runner_factory)
+            InstructionRunnerFactory = instruction_runner_factory.InstructionRunnerFactory
+            InstructionRunnerFactory._api_group_runner_map = {}
+
+            runner = InstructionRunnerFactory.get_provider_instruction_runner(
+                "k8s", mock_outputs_handler, NullDisplay()
+            )
+
+            self.assertEqual(self.mock_k8s_api_runner, runner)
+            self.mock_k8s_api_runner_cls.assert_called_once_with(
+                display_manager=ANY,
+                kubeconfig_path="/tmp/kubeconfig",
+                cluster_endpoint=None,
+                cluster_ca_data=None,
+                cluster_name=None,
+                region=None,
+            )
 
     def test_raise_not_value_error_on_unmatched_provider(self) -> None:
         mock_outputs_handler = Mock(spec=EngineOutputsHandler)

@@ -313,6 +313,10 @@ class TestManifestCommandRunner(unittest.TestCase):
         winners = runner.get_result_value(cmd, "karaoke-winners", list[str])
         self.assertEqual(winners, ["Ross", "Rachel"])
 
+        # Test str→int coercion for integer-like strings
+        hours_as_int = runner.get_result_value(cmd, "hours-of-hangover", int)
+        self.assertEqual(hours_as_int, 24)
+
         # Test with different expected type
         with self.assertRaises(TypeError):
             runner.get_result_value(cmd, "hours-of-hangover", list)
@@ -320,6 +324,33 @@ class TestManifestCommandRunner(unittest.TestCase):
             runner.get_result_value(cmd, "party", dict)
         with self.assertRaises(TypeError):
             runner.get_result_value(cmd, "karaoke-winners", int)
+
+    @patch("jupyter_deploy.provider.manifest_command_runner.InstructionRunnerFactory.get_provider_instruction_runner")
+    def test_get_result_value_str_to_int_rejects_non_integer(self, mock_get_provider_instruction_runner: Mock) -> None:
+        cmd = JupyterDeployCommandV1.model_validate(
+            {
+                "cmd": "test",
+                "sequence": [{"api-name": "mock.api", "arguments": []}],
+                "results": [{"result-name": "price", "source": "result", "source-key": "[0].Price"}],
+            }
+        )
+
+        mock_runner = Mock()
+        mock_runner.execute_instruction.return_value = {
+            "Price": StrResolvedInstructionResult(result_name="Price", value="1.25"),
+        }
+        mock_get_provider_instruction_runner.return_value = mock_runner
+
+        output_handler_mock = Mock()
+        output_handler_mock.get_full_project_outputs.return_value = {}
+
+        runner = ManifestCommandRunner(
+            display_manager=Mock(), output_handler=output_handler_mock, variable_handler=Mock()
+        )
+        runner.run_command_sequence(cmd, {})
+
+        with self.assertRaises(TypeError):
+            runner.get_result_value(cmd, "price", int)
 
     @patch("jupyter_deploy.provider.manifest_command_runner.InstructionRunnerFactory.get_provider_instruction_runner")
     def test_get_result_value_raises_error_for_invalid_result(self, mock_get_provider_instruction_runner: Mock) -> None:

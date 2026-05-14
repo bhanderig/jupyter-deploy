@@ -15,6 +15,7 @@ from jupyter_deploy.provider.resolved_argdefs import (
     retrieve_optional_arg,
 )
 from jupyter_deploy.provider.resolved_resultdefs import (
+    ListStrResolvedInstructionResult,
     ResolvedInstructionResult,
     StrResolvedInstructionResult,
 )
@@ -66,7 +67,7 @@ class K8sCustomRunner(InstructionRunner):
 
         names = [item.get("metadata", {}).get("name", "") for item in items]
         return {
-            "Names": StrResolvedInstructionResult(result_name="Names", value=",".join(names)),
+            "Names": ListStrResolvedInstructionResult(result_name="Names", value=names),
             "Items": StrResolvedInstructionResult(result_name="Items", value=json.dumps(items)),
             "NextToken": StrResolvedInstructionResult(result_name="NextToken", value=next_token or ""),
         }
@@ -123,7 +124,7 @@ class K8sCustomRunner(InstructionRunner):
 
         names = [item.get("metadata", {}).get("name", "") for item in items]
         return {
-            "Names": StrResolvedInstructionResult(result_name="Names", value=",".join(names)),
+            "Names": ListStrResolvedInstructionResult(result_name="Names", value=names),
             "Items": StrResolvedInstructionResult(result_name="Items", value=json.dumps(items)),
             "NextToken": StrResolvedInstructionResult(result_name="NextToken", value=next_token or ""),
         }

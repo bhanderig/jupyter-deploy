@@ -1,4 +1,5 @@
 import json
+import subprocess
 from enum import Enum
 
 from kubernetes import client
@@ -6,7 +7,12 @@ from kubernetes import client
 from jupyter_deploy import cmd_utils
 from jupyter_deploy.api.k8s import core as k8s_core
 from jupyter_deploy.engine.supervised_execution import DisplayManager
-from jupyter_deploy.exceptions import InstructionNotFoundError, InteractiveSessionError, InteractiveSessionTimeoutError
+from jupyter_deploy.exceptions import (
+    InstructionError,
+    InstructionNotFoundError,
+    InteractiveSessionError,
+    InteractiveSessionTimeoutError,
+)
 from jupyter_deploy.provider.instruction_runner import InstructionRunner
 from jupyter_deploy.provider.resolved_argdefs import (
     ResolvedInstructionArgument,
@@ -126,19 +132,28 @@ class K8sCoreRunner(InstructionRunner):
         name_arg = require_arg(resolved_arguments, "name", StrResolvedInstructionArgument)
         scope_arg = require_arg(resolved_arguments, "scope", StrResolvedInstructionArgument)
         container_arg = retrieve_optional_arg(resolved_arguments, "container", StrResolvedInstructionArgument, "")
-        tail_lines_arg = retrieve_optional_arg(resolved_arguments, "tail_lines", StrResolvedInstructionArgument, "")
+        extra_arg = retrieve_optional_arg(resolved_arguments, "extra", StrResolvedInstructionArgument, "")
 
-        container = container_arg.value if container_arg.value and container_arg.value != "default" else None
         self.display_manager.info(f"Getting logs for deployment {name_arg.value} in namespace: {scope_arg.value}")
-        logs = k8s_core.get_deployment_logs(
-            self.core_api,
-            self.apps_api,
-            name=name_arg.value,
-            namespace=scope_arg.value,
-            container=container,
-            tail_lines=int(tail_lines_arg.value) if tail_lines_arg.value else None,
-        )
 
+        pod_name = self._resolve_pod_name(name_arg.value, scope_arg.value)
+        container = container_arg.value if container_arg.value and container_arg.value != "default" else None
+
+        kubectl_cmd = ["kubectl", "logs", pod_name, "--namespace", scope_arg.value]
+        if self._kubeconfig_path:
+            kubectl_cmd.extend(["--kubeconfig", self._kubeconfig_path])
+        if container:
+            kubectl_cmd.extend(["-c", container])
+        if extra_arg.value:
+            kubectl_cmd.extend(extra_arg.value.split())
+
+        try:
+            logs = cmd_utils.run_cmd_and_capture_output(kubectl_cmd)
+        except subprocess.CalledProcessError as e:
+            stderr = e.stderr.strip() if e.stderr else ""
+            if "unknown flag" in stderr or "unknown shorthand flag" in stderr or "invalid argument" in stderr:
+                raise InstructionError(stderr) from None
+            raise
         return {
             "Logs": StrResolvedInstructionResult(result_name="Logs", value=logs),
         }

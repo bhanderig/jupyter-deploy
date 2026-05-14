@@ -336,6 +336,38 @@ class ResourceNameRequiredError(JupyterDeployError, ValueError):
         )
 
 
+class ComponentNotFoundError(JupyterDeployError, ValueError):
+    """Raised when a component name is not found in the manifest.
+
+    Attributes:
+        component_name: The name that was looked up
+        valid_components: List of valid component names
+    """
+
+    def __init__(self, component_name: str, valid_components: list[str]) -> None:
+        self.component_name = component_name
+        self.valid_components = valid_components
+        super().__init__(f"Component '{component_name}' not found.")
+
+
+class InvalidComponentVerbError(JupyterDeployError, ValueError):
+    """Raised when a verb is not valid for the component's type.
+
+    Attributes:
+        component_name: The component name
+        verb: The verb that was attempted
+        component_type: The component type (e.g., Deployment, CronJob)
+        valid_verbs: List of valid verbs for this component
+    """
+
+    def __init__(self, component_name: str, verb: str, component_type: str, valid_verbs: list[str]) -> None:
+        self.component_name = component_name
+        self.verb = verb
+        self.component_type = component_type
+        self.valid_verbs = valid_verbs
+        super().__init__(f"'{verb}' is not supported for {component_type} component '{component_name}'.")
+
+
 class ResourceNotFoundError(InstructionError, RuntimeError):
     """Raised when a provider resource is not found (e.g., node, pod, deployment).
 

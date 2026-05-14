@@ -14,6 +14,7 @@ from jupyter_deploy.enum import (
 )
 from jupyter_deploy.exceptions import (
     CommandNotImplementedError,
+    ComponentNotFoundError,
     InvalidServiceError,
     InvalidStoreTypeError,
     SecretNotFoundError,
@@ -264,6 +265,21 @@ class JupyterDeployProjectStoreV1(BaseModel):
             raise InvalidStoreTypeError(self.store_type, [t.value for t in StoreType]) from None
 
 
+class JupyterDeployComponentVerbV1(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    method: str
+
+
+class JupyterDeployComponentDefinitionV1(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    type: str
+    description: str = ""
+    resource_name: str | None = Field(alias="resource-name", default=None)
+    scope: str
+    query: str = ""
+    verbs: dict[str, JupyterDeployComponentVerbV1]
+
+
 class JupyterDeployManifestV1(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
     schema_version: Literal[1]
@@ -278,6 +294,7 @@ class JupyterDeployManifestV1(BaseModel):
     server_status_rules: list[JupyterDeployStatusRuleV1] | None = Field(alias="server-status-rules", default=None)
     supervised_execution: JupyterDeploySupervisedExecutionV1 | None = Field(alias="supervised-execution", default=None)
     project_store: JupyterDeployProjectStoreV1 | None = Field(alias="project-store", default=None)
+    components: dict[str, JupyterDeployComponentDefinitionV1] | None = None
 
     def get_engine(self) -> EngineType:
         """Return the engine type."""
@@ -368,6 +385,28 @@ class JupyterDeployManifestV1(BaseModel):
     def compute_project_id(self, deployment_id: str) -> str:
         """Return a project identifier for use in the project store."""
         return f"{self.template.name}-{deployment_id}"
+
+    def get_components(self) -> dict[str, JupyterDeployComponentDefinitionV1]:
+        """Return the components map.
+
+        Raises:
+            CommandNotImplementedError if no components are declared.
+        """
+        if not self.components:
+            raise CommandNotImplementedError("component")
+        return self.components
+
+    def get_component(self, name: str) -> JupyterDeployComponentDefinitionV1:
+        """Return a single component definition by name.
+
+        Raises:
+            CommandNotImplementedError if no components are declared.
+            ComponentNotFoundError if the named component does not exist.
+        """
+        components = self.get_components()
+        if name not in components:
+            raise ComponentNotFoundError(name, list(components.keys()))
+        return components[name]
 
 
 # Combined type using discriminated union

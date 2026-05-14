@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from jupyter_deploy import cmd_utils
+from jupyter_deploy.cli.component_app import component_app
 from jupyter_deploy.cli.error_decorator import handle_cli_errors
 from jupyter_deploy.cli.history_app import history_app
 from jupyter_deploy.cli.host_app import host_app
@@ -56,6 +57,7 @@ class JupyterDeployCliRunner:
         self.app.add_typer(teams_app, name="teams")
         self.app.add_typer(organization_app, name="organization")
         self.app.add_typer(host_app, name="host")
+        self.app.add_typer(component_app, name="component")
         self.app.add_typer(history_app, name="history")
         self.app.add_typer(projects_app, name="projects")
 

@@ -1,9 +1,15 @@
+import subprocess
 import unittest
 from unittest.mock import Mock, patch
 
 from jupyter_deploy.api.k8s.core import ExecResult, NodeConditionStatus, NodeInfo, PodInfo, PodPhase
 from jupyter_deploy.engine.supervised_execution import NullDisplay
-from jupyter_deploy.exceptions import InstructionNotFoundError, InteractiveSessionError, InteractiveSessionTimeoutError
+from jupyter_deploy.exceptions import (
+    InstructionError,
+    InstructionNotFoundError,
+    InteractiveSessionError,
+    InteractiveSessionTimeoutError,
+)
 from jupyter_deploy.provider.k8s.k8s_core_runner import K8sCoreRunner
 from jupyter_deploy.provider.resolved_argdefs import StrResolvedInstructionArgument
 
@@ -196,10 +202,19 @@ class TestK8sCoreRunner(unittest.TestCase):
         self.assertEqual(result["Name"].value, "pod-1")
         self.assertEqual(result["Phase"].value, "Running")
 
+    @patch("jupyter_deploy.provider.k8s.k8s_core_runner.cmd_utils")
     @patch("jupyter_deploy.provider.k8s.k8s_core_runner.k8s_core")
-    def test_deployment_logs_returns_logs(self, mock_k8s_core: Mock) -> None:
+    def test_deployment_logs_returns_logs(self, mock_k8s_core: Mock, mock_cmd_utils: Mock) -> None:
         runner = self._make_runner()
-        mock_k8s_core.get_deployment_logs.return_value = "log output"
+        mock_deployment: Mock = Mock()
+        mock_deployment.spec.selector.match_labels = {"app": "web"}
+        mock_apps_api: Mock = runner.apps_api  # type: ignore[assignment]
+        mock_apps_api.read_namespaced_deployment.return_value = mock_deployment
+        mock_k8s_core.list_pods.return_value = (
+            [PodInfo(name="web-pod-abc", phase=PodPhase.RUNNING)],
+            None,
+        )
+        mock_cmd_utils.run_cmd_and_capture_output.return_value = "log output"
 
         result = runner.execute_instruction(
             instruction_name="deployment-logs",
@@ -210,19 +225,23 @@ class TestK8sCoreRunner(unittest.TestCase):
         )
 
         self.assertEqual(result["Logs"].value, "log output")
-        mock_k8s_core.get_deployment_logs.assert_called_once_with(
-            runner.core_api,
-            runner.apps_api,
-            name="my-deploy",
-            namespace="default",
-            container=None,
-            tail_lines=None,
+        mock_cmd_utils.run_cmd_and_capture_output.assert_called_once_with(
+            ["kubectl", "logs", "web-pod-abc", "--namespace", "default"]
         )
 
+    @patch("jupyter_deploy.provider.k8s.k8s_core_runner.cmd_utils")
     @patch("jupyter_deploy.provider.k8s.k8s_core_runner.k8s_core")
-    def test_deployment_logs_passes_container_and_tail_lines(self, mock_k8s_core: Mock) -> None:
-        runner = self._make_runner()
-        mock_k8s_core.get_deployment_logs.return_value = "log"
+    def test_deployment_logs_passes_container_and_extra(self, mock_k8s_core: Mock, mock_cmd_utils: Mock) -> None:
+        runner = self._make_runner(kubeconfig_path="/tmp/kubeconfig")
+        mock_deployment: Mock = Mock()
+        mock_deployment.spec.selector.match_labels = {"app": "web"}
+        mock_apps_api: Mock = runner.apps_api  # type: ignore[assignment]
+        mock_apps_api.read_namespaced_deployment.return_value = mock_deployment
+        mock_k8s_core.list_pods.return_value = (
+            [PodInfo(name="web-pod-abc", phase=PodPhase.RUNNING)],
+            None,
+        )
+        mock_cmd_utils.run_cmd_and_capture_output.return_value = "log"
 
         runner.execute_instruction(
             instruction_name="deployment-logs",
@@ -230,17 +249,24 @@ class TestK8sCoreRunner(unittest.TestCase):
                 "name": StrResolvedInstructionArgument(argument_name="name", value="my-deploy"),
                 "scope": StrResolvedInstructionArgument(argument_name="scope", value="ns"),
                 "container": StrResolvedInstructionArgument(argument_name="container", value="main"),
-                "tail_lines": StrResolvedInstructionArgument(argument_name="tail_lines", value="50"),
+                "extra": StrResolvedInstructionArgument(argument_name="extra", value="--tail=50 --since=1h"),
             },
         )
 
-        mock_k8s_core.get_deployment_logs.assert_called_once_with(
-            runner.core_api,
-            runner.apps_api,
-            name="my-deploy",
-            namespace="ns",
-            container="main",
-            tail_lines=50,
+        mock_cmd_utils.run_cmd_and_capture_output.assert_called_once_with(
+            [
+                "kubectl",
+                "logs",
+                "web-pod-abc",
+                "--namespace",
+                "ns",
+                "--kubeconfig",
+                "/tmp/kubeconfig",
+                "-c",
+                "main",
+                "--tail=50",
+                "--since=1h",
+            ]
         )
 
     @patch("jupyter_deploy.provider.k8s.k8s_core_runner.k8s_core")
@@ -439,6 +465,89 @@ class TestK8sCoreRunner(unittest.TestCase):
         mock_cmd_utils.run_cmd_and_pipe_to_terminal.assert_called_once_with(
             ["kubectl", "exec", "-it", "pod-1", "-n", "ns", "--", "/bin/bash"]
         )
+
+    @patch("jupyter_deploy.provider.k8s.k8s_core_runner.cmd_utils")
+    @patch("jupyter_deploy.provider.k8s.k8s_core_runner.k8s_core")
+    def test_deployment_logs_unknown_flag_raises_instruction_error(
+        self, mock_k8s_core: Mock, mock_cmd_utils: Mock
+    ) -> None:
+        runner = self._make_runner()
+        mock_deployment: Mock = Mock()
+        mock_deployment.spec.selector.match_labels = {"app": "web"}
+        mock_apps_api: Mock = runner.apps_api  # type: ignore[assignment]
+        mock_apps_api.read_namespaced_deployment.return_value = mock_deployment
+        mock_k8s_core.list_pods.return_value = (
+            [PodInfo(name="web-pod-abc", phase=PodPhase.RUNNING)],
+            None,
+        )
+        mock_cmd_utils.run_cmd_and_capture_output.side_effect = subprocess.CalledProcessError(
+            1, "kubectl", stderr="Error: unknown flag: --head=3"
+        )
+
+        with self.assertRaises(InstructionError):
+            runner.execute_instruction(
+                instruction_name="deployment-logs",
+                resolved_arguments={
+                    "name": StrResolvedInstructionArgument(argument_name="name", value="my-deploy"),
+                    "scope": StrResolvedInstructionArgument(argument_name="scope", value="default"),
+                    "extra": StrResolvedInstructionArgument(argument_name="extra", value="--head=3"),
+                },
+            )
+
+    @patch("jupyter_deploy.provider.k8s.k8s_core_runner.cmd_utils")
+    @patch("jupyter_deploy.provider.k8s.k8s_core_runner.k8s_core")
+    def test_deployment_logs_invalid_argument_raises_instruction_error(
+        self, mock_k8s_core: Mock, mock_cmd_utils: Mock
+    ) -> None:
+        runner = self._make_runner()
+        mock_deployment: Mock = Mock()
+        mock_deployment.spec.selector.match_labels = {"app": "web"}
+        mock_apps_api: Mock = runner.apps_api  # type: ignore[assignment]
+        mock_apps_api.read_namespaced_deployment.return_value = mock_deployment
+        mock_k8s_core.list_pods.return_value = (
+            [PodInfo(name="web-pod-abc", phase=PodPhase.RUNNING)],
+            None,
+        )
+        mock_cmd_utils.run_cmd_and_capture_output.side_effect = subprocess.CalledProcessError(
+            1,
+            "kubectl",
+            stderr='invalid argument "abc" for "--tail" flag: strconv.ParseInt: parsing "abc": invalid syntax',
+        )
+
+        with self.assertRaises(InstructionError):
+            runner.execute_instruction(
+                instruction_name="deployment-logs",
+                resolved_arguments={
+                    "name": StrResolvedInstructionArgument(argument_name="name", value="my-deploy"),
+                    "scope": StrResolvedInstructionArgument(argument_name="scope", value="default"),
+                    "extra": StrResolvedInstructionArgument(argument_name="extra", value="--tail=abc"),
+                },
+            )
+
+    @patch("jupyter_deploy.provider.k8s.k8s_core_runner.cmd_utils")
+    @patch("jupyter_deploy.provider.k8s.k8s_core_runner.k8s_core")
+    def test_deployment_logs_other_error_bubbles_up(self, mock_k8s_core: Mock, mock_cmd_utils: Mock) -> None:
+        runner = self._make_runner()
+        mock_deployment: Mock = Mock()
+        mock_deployment.spec.selector.match_labels = {"app": "web"}
+        mock_apps_api: Mock = runner.apps_api  # type: ignore[assignment]
+        mock_apps_api.read_namespaced_deployment.return_value = mock_deployment
+        mock_k8s_core.list_pods.return_value = (
+            [PodInfo(name="web-pod-abc", phase=PodPhase.RUNNING)],
+            None,
+        )
+        mock_cmd_utils.run_cmd_and_capture_output.side_effect = subprocess.CalledProcessError(
+            1, "kubectl", stderr="error: pod web-pod-abc is not running"
+        )
+
+        with self.assertRaises(subprocess.CalledProcessError):
+            runner.execute_instruction(
+                instruction_name="deployment-logs",
+                resolved_arguments={
+                    "name": StrResolvedInstructionArgument(argument_name="name", value="my-deploy"),
+                    "scope": StrResolvedInstructionArgument(argument_name="scope", value="default"),
+                },
+            )
 
     def test_unknown_instruction_raises_error(self) -> None:
         runner = self._make_runner()

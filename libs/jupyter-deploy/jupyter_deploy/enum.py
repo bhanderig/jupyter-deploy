@@ -1,6 +1,14 @@
 from enum import Enum
 
 
+class StatusCategory(str, Enum):
+    """Health category for component/resource status, used by the CLI to pick display colors."""
+
+    HEALTHY = "healthy"
+    IN_PROGRESS = "in-progress"
+    DEGRADED = "degraded"
+
+
 class HostStatusType(str, Enum):
     """Types of host status checks available via `jd host status --for`."""
 

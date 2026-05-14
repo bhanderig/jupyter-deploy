@@ -44,6 +44,12 @@ values:
 - name: server_default_scope
   source: output
   source-key: server_default_scope
+- name: workspace_router_namespace
+  source: output
+  source-key: workspace_router_namespace
+- name: workspace_operator_namespace
+  source: output
+  source-key: workspace_operator_namespace
 project-store:
   store-type: s3-only
 multi-host: true
@@ -297,7 +303,7 @@ commands:
     - api-attribute: container
       source: cli
       source-key: service
-    - api-attribute: tail_lines
+    - api-attribute: extra
       source: cli
       source-key: extra
   results:
@@ -406,6 +412,244 @@ commands:
     - api-attribute: container
       source: cli
       source-key: service
+- cmd: component.deployment.status
+  sequence:
+  - api-name: k8s.apps.get-deployment-status
+    arguments:
+    - api-attribute: name
+      source: cli
+      source-key: name
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+  results:
+  - result-name: component.deployment.status.status
+    source: result
+    source-key: '[0].Status'
+  - result-name: component.deployment.status.status_category
+    source: result
+    source-key: '[0].StatusCategory'
+  - result-name: component.deployment.status.details
+    source: result
+    source-key: '[0].Details'
+  - result-name: component.deployment.status.sub_component
+    source: result
+    source-key: '[0].SubComponent'
+- cmd: component.deployment.show
+  sequence:
+  - api-name: k8s.apps.get-deployment
+    arguments:
+    - api-attribute: name
+      source: cli
+      source-key: name
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+  results:
+  - result-name: component.deployment.show.name
+    source: result
+    source-key: '[0].Name'
+  - result-name: component.deployment.show.resource
+    source: result
+    source-key: '[0].Resource'
+- cmd: component.deployment.logs
+  sequence:
+  - api-name: k8s.core.deployment-logs
+    arguments:
+    - api-attribute: name
+      source: cli
+      source-key: name
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: extra
+      source: cli
+      source-key: extra
+  results:
+  - result-name: component.deployment.logs.logs
+    source: result
+    source-key: '[0].Logs'
+- cmd: component.deployment.restart
+  sequence:
+  - api-name: k8s.apps.rollout-restart
+    arguments:
+    - api-attribute: name
+      source: cli
+      source-key: name
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+- cmd: component.cronjob.status
+  sequence:
+  - api-name: k8s.batch.get-cronjob-status
+    arguments:
+    - api-attribute: name
+      source: cli
+      source-key: name
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: query
+      source: cli
+      source-key: query
+  results:
+  - result-name: component.cronjob.status.status
+    source: result
+    source-key: '[0].Status'
+  - result-name: component.cronjob.status.status_category
+    source: result
+    source-key: '[0].StatusCategory'
+  - result-name: component.cronjob.status.details
+    source: result
+    source-key: '[0].Details'
+  - result-name: component.cronjob.status.sub_component
+    source: result
+    source-key: '[0].SubComponent'
+- cmd: component.cronjob.show
+  sequence:
+  - api-name: k8s.batch.get-cronjob
+    arguments:
+    - api-attribute: name
+      source: cli
+      source-key: name
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+  results:
+  - result-name: component.cronjob.show.name
+    source: result
+    source-key: '[0].Name'
+  - result-name: component.cronjob.show.resource
+    source: result
+    source-key: '[0].Resource'
+- cmd: component.cronjob.logs
+  sequence:
+  - api-name: k8s.batch.get-job-logs
+    arguments:
+    - api-attribute: name
+      source: cli
+      source-key: name
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+    - api-attribute: query
+      source: cli
+      source-key: query
+    - api-attribute: extra
+      source: cli
+      source-key: extra
+  results:
+  - result-name: component.cronjob.logs.logs
+    source: result
+    source-key: '[0].Logs'
+- cmd: component.cronjob.trigger
+  sequence:
+  - api-name: k8s.batch.create-job-from-cronjob
+    arguments:
+    - api-attribute: name
+      source: cli
+      source-key: name
+    - api-attribute: scope
+      source: cli
+      source-key: scope
+  results:
+  - result-name: component.cronjob.trigger.job_name
+    source: result
+    source-key: '[0].JobName'
+components:
+  traefik:
+    type: Deployment
+    description: Ingress controller and reverse proxy
+    scope: workspace_router_namespace
+    verbs:
+      status:
+        method: k8s.apps.get-deployment-status
+      show:
+        method: k8s.apps.get-deployment
+      logs:
+        method: k8s.core.deployment-logs
+      restart:
+        method: k8s.apps.rollout-restart
+  dex:
+    type: Deployment
+    description: OIDC identity provider
+    scope: workspace_router_namespace
+    verbs:
+      status:
+        method: k8s.apps.get-deployment-status
+      show:
+        method: k8s.apps.get-deployment
+      logs:
+        method: k8s.core.deployment-logs
+      restart:
+        method: k8s.apps.rollout-restart
+  oauth2-proxy:
+    type: Deployment
+    description: OAuth2 authentication proxy
+    scope: workspace_router_namespace
+    verbs:
+      status:
+        method: k8s.apps.get-deployment-status
+      show:
+        method: k8s.apps.get-deployment
+      logs:
+        method: k8s.core.deployment-logs
+      restart:
+        method: k8s.apps.rollout-restart
+  authmiddleware:
+    type: Deployment
+    description: JWT validation and session management
+    scope: workspace_router_namespace
+    verbs:
+      status:
+        method: k8s.apps.get-deployment-status
+      show:
+        method: k8s.apps.get-deployment
+      logs:
+        method: k8s.core.deployment-logs
+      restart:
+        method: k8s.apps.rollout-restart
+  console:
+    type: Deployment
+    description: Web console for workspace management
+    scope: workspace_router_namespace
+    verbs:
+      status:
+        method: k8s.apps.get-deployment-status
+      show:
+        method: k8s.apps.get-deployment
+      logs:
+        method: k8s.core.deployment-logs
+      restart:
+        method: k8s.apps.rollout-restart
+  workspace-operator:
+    type: Deployment
+    description: Workspace lifecycle controller
+    resource-name: jupyter-k8s-controller-manager
+    scope: workspace_operator_namespace
+    verbs:
+      status:
+        method: k8s.apps.get-deployment-status
+      show:
+        method: k8s.apps.get-deployment
+      logs:
+        method: k8s.core.deployment-logs
+      restart:
+        method: k8s.apps.rollout-restart
+  jwt-rotator:
+    type: CronJob
+    description: Periodic JWT signing key rotation
+    scope: workspace_router_namespace
+    query: "app=jwt-rotator"
+    verbs:
+      status:
+        method: k8s.batch.get-cronjob-status
+      show:
+        method: k8s.batch.get-cronjob
+      logs:
+        method: k8s.batch.get-job-logs
+      trigger:
+        method: k8s.batch.create-job-from-cronjob
 supervised-execution:
   config:
     config.terraform-plan:

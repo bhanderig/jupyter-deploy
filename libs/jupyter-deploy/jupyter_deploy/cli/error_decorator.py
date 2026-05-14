@@ -8,6 +8,7 @@ from rich.console import Console
 
 from jupyter_deploy.exceptions import (
     CommandNotImplementedError,
+    ComponentNotFoundError,
     ConfigurationError,
     DownAutoApproveRequiredError,
     HostCommandInstructionError,
@@ -15,6 +16,7 @@ from jupyter_deploy.exceptions import (
     InstructionNotFoundError,
     InteractiveSessionError,
     InteractiveSessionTimeoutError,
+    InvalidComponentVerbError,
     InvalidInstructionArgumentError,
     InvalidInstructionResultError,
     InvalidManifestError,
@@ -188,6 +190,19 @@ def handle_cli_errors(console: Console) -> Generator[None, None, None]:
         console.print(f":x: {e}", style="bold red")
         console.line()
         console.print(f":bulb: Run [bold cyan]{e.list_command}[/] to see available {e.resource_type}s.")
+        raise typer.Exit(code=1) from None
+
+    except ComponentNotFoundError as e:
+        console.print(f":x: {e}", style="bold red")
+        console.line()
+        console.print(f"Available components: {', '.join(e.valid_components)}")
+        console.print(":bulb: Run [bold cyan]jd component list[/] to see all components.")
+        raise typer.Exit(code=1) from None
+
+    except InvalidComponentVerbError as e:
+        console.print(f":x: {e}", style="bold red")
+        console.line()
+        console.print(f"Available actions for '{e.component_name}': {', '.join(e.valid_verbs)}")
         raise typer.Exit(code=1) from None
 
     except ResourceNotFoundError as e:

@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from kubernetes.client import AppsV1Api, CoreV1Api
+from kubernetes.client import CoreV1Api
 from kubernetes.client.exceptions import ApiException
 
 from jupyter_deploy.api.k8s.core import (
@@ -9,7 +9,6 @@ from jupyter_deploy.api.k8s.core import (
     NodeConditionStatus,
     PodPhase,
     exec_pod,
-    get_deployment_logs,
     get_node,
     get_pod,
     list_nodes,
@@ -190,70 +189,6 @@ class TestGetPod(unittest.TestCase):
 
         with self.assertRaises(ApiException):
             get_pod(mock_api, name="nonexistent", namespace="default")
-
-
-def _mock_deployment(match_labels: dict[str, str] | None = None) -> Mock:
-    deployment: Mock = Mock()
-    deployment.spec.selector.match_labels = match_labels
-    return deployment
-
-
-class TestGetDeploymentLogs(unittest.TestCase):
-    def test_returns_logs_from_first_pod(self) -> None:
-        mock_core: Mock = Mock(spec=CoreV1Api)
-        mock_apps: Mock = Mock(spec=AppsV1Api)
-        mock_apps.read_namespaced_deployment.return_value = _mock_deployment({"app": "web"})
-        mock_core.list_namespaced_pod.return_value = _mock_pod_list([_mock_pod("pod-1")])
-        mock_core.read_namespaced_pod_log.return_value = "log line 1\nlog line 2"
-
-        result = get_deployment_logs(mock_core, mock_apps, name="my-deploy", namespace="default")
-
-        self.assertEqual(result, "log line 1\nlog line 2")
-        mock_apps.read_namespaced_deployment.assert_called_once_with(name="my-deploy", namespace="default")
-        mock_core.list_namespaced_pod.assert_called_once_with(namespace="default", label_selector="app=web")
-        mock_core.read_namespaced_pod_log.assert_called_once_with(name="pod-1", namespace="default")
-
-    def test_returns_empty_when_no_pods(self) -> None:
-        mock_core: Mock = Mock(spec=CoreV1Api)
-        mock_apps: Mock = Mock(spec=AppsV1Api)
-        mock_apps.read_namespaced_deployment.return_value = _mock_deployment({"app": "web"})
-        mock_core.list_namespaced_pod.return_value = _mock_pod_list([])
-
-        result = get_deployment_logs(mock_core, mock_apps, name="my-deploy", namespace="default")
-
-        self.assertEqual(result, "")
-        mock_core.read_namespaced_pod_log.assert_not_called()
-
-    def test_returns_empty_when_no_match_labels(self) -> None:
-        mock_core: Mock = Mock(spec=CoreV1Api)
-        mock_apps: Mock = Mock(spec=AppsV1Api)
-        mock_apps.read_namespaced_deployment.return_value = _mock_deployment(None)
-
-        result = get_deployment_logs(mock_core, mock_apps, name="my-deploy", namespace="default")
-
-        self.assertEqual(result, "")
-        mock_core.list_namespaced_pod.assert_not_called()
-
-    def test_passes_container_and_tail_lines(self) -> None:
-        mock_core: Mock = Mock(spec=CoreV1Api)
-        mock_apps: Mock = Mock(spec=AppsV1Api)
-        mock_apps.read_namespaced_deployment.return_value = _mock_deployment({"app": "web"})
-        mock_core.list_namespaced_pod.return_value = _mock_pod_list([_mock_pod("pod-1")])
-        mock_core.read_namespaced_pod_log.return_value = "last line"
-
-        get_deployment_logs(mock_core, mock_apps, name="my-deploy", namespace="ns", container="main", tail_lines=10)
-
-        mock_core.read_namespaced_pod_log.assert_called_once_with(
-            name="pod-1", namespace="ns", container="main", tail_lines=10
-        )
-
-    def test_raises_on_api_error(self) -> None:
-        mock_core: Mock = Mock(spec=CoreV1Api)
-        mock_apps: Mock = Mock(spec=AppsV1Api)
-        mock_apps.read_namespaced_deployment.side_effect = _NOT_FOUND
-
-        with self.assertRaises(ApiException):
-            get_deployment_logs(mock_core, mock_apps, name="my-deploy", namespace="default")
 
 
 class TestExecPod(unittest.TestCase):

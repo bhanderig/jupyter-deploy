@@ -106,6 +106,58 @@ class TestK8sApiRunner(unittest.TestCase):
                     runner.execute_instruction(instruction_name=invalid_instruction, resolved_arguments={})
                 self.assertIn(invalid_instruction, str(context.exception))
 
+    @patch("jupyter_deploy.provider.k8s.k8s_runner.K8sAppsRunner")
+    @patch("jupyter_deploy.provider.k8s.k8s_runner.K8sClientFactory")
+    def test_execute_instantiates_apps_runner_and_delegates(
+        self, mock_factory: Mock, mock_apps_runner_class: Mock
+    ) -> None:
+        mock_api_client: Mock = Mock()
+        mock_factory.from_kubeconfig.return_value = mock_api_client
+
+        mock_apps_runner: Mock = Mock()
+        mock_apps_runner_class.return_value = mock_apps_runner
+        expected_result = {"result_key": Mock(spec=ResolvedInstructionResult)}
+        mock_apps_runner.execute_instruction.return_value = expected_result
+
+        runner = K8sApiRunner(NullDisplay(), kubeconfig_path="/tmp/kubeconfig")
+        resolved_args: dict[str, ResolvedInstructionArgument] = {"arg1": Mock(spec=ResolvedInstructionArgument)}
+
+        result = runner.execute_instruction(
+            instruction_name="k8s.apps.get-deployment-status", resolved_arguments=resolved_args
+        )
+
+        mock_apps_runner_class.assert_called_once_with(ANY, api_client=mock_api_client)
+        mock_apps_runner.execute_instruction.assert_called_once_with(
+            instruction_name="get-deployment-status", resolved_arguments=resolved_args
+        )
+        self.assertEqual(result, expected_result)
+
+    @patch("jupyter_deploy.provider.k8s.k8s_runner.K8sBatchRunner")
+    @patch("jupyter_deploy.provider.k8s.k8s_runner.K8sClientFactory")
+    def test_execute_instantiates_batch_runner_and_delegates(
+        self, mock_factory: Mock, mock_batch_runner_class: Mock
+    ) -> None:
+        mock_api_client: Mock = Mock()
+        mock_factory.from_kubeconfig.return_value = mock_api_client
+
+        mock_batch_runner: Mock = Mock()
+        mock_batch_runner_class.return_value = mock_batch_runner
+        expected_result = {"result_key": Mock(spec=ResolvedInstructionResult)}
+        mock_batch_runner.execute_instruction.return_value = expected_result
+
+        runner = K8sApiRunner(NullDisplay(), kubeconfig_path="/tmp/kubeconfig")
+        resolved_args: dict[str, ResolvedInstructionArgument] = {"arg1": Mock(spec=ResolvedInstructionArgument)}
+
+        result = runner.execute_instruction(
+            instruction_name="k8s.batch.get-cronjob-status", resolved_arguments=resolved_args
+        )
+
+        mock_batch_runner_class.assert_called_once_with(ANY, api_client=mock_api_client)
+        mock_batch_runner.execute_instruction.assert_called_once_with(
+            instruction_name="get-cronjob-status", resolved_arguments=resolved_args
+        )
+        self.assertEqual(result, expected_result)
+
     @patch("jupyter_deploy.provider.k8s.k8s_runner.K8sCoreRunner")
     @patch("jupyter_deploy.provider.k8s.k8s_runner.K8sClientFactory")
     def test_uses_eks_cluster_when_all_params_provided(self, mock_factory: Mock, mock_core_runner_class: Mock) -> None:

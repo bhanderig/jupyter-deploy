@@ -17,6 +17,8 @@ services:
       - ./.auth:/workspace/.auth
       # Mount AWS credentials (read-only) - accessible by testuser
       - ~/.aws:/home/testuser/.aws:ro
+      # Mount kube config (read-only) - needed for kubectl commands
+      - ~/.kube:/home/testuser/.kube:ro
       # Mount X11 socket for GUI applications
       - /tmp/.X11-unix:/tmp/.X11-unix
       # Project directory will be mounted dynamically via override file in justfile

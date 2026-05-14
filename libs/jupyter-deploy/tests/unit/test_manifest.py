@@ -6,9 +6,15 @@ import yaml
 
 from jupyter_deploy.engine.enum import EngineType
 from jupyter_deploy.enum import StoreType
-from jupyter_deploy.exceptions import InvalidStoreTypeError, SecretNotFoundError
+from jupyter_deploy.exceptions import (
+    CommandNotImplementedError,
+    ComponentNotFoundError,
+    InvalidStoreTypeError,
+    SecretNotFoundError,
+)
 from jupyter_deploy.manifest import (
     InvalidServiceError,
+    JupyterDeployComponentDefinitionV1,
     JupyterDeployManifestV1,
     JupyterDeployProjectStoreV1,
 )
@@ -192,3 +198,87 @@ class TestJupyterDeployProjectStoreV1(unittest.TestCase):
         manifest = self._make_manifest()
         result = manifest.compute_project_id("dep-abc123")
         self.assertEqual(result, "test-template-dep-abc123")
+
+
+class TestJupyterDeployManifestV1Components(unittest.TestCase):
+    def _make_manifest(self, components: dict[str, Any] | None = None) -> JupyterDeployManifestV1:
+        data: dict[str, Any] = {
+            "schema_version": 1,
+            "template": {"name": "test-template", "engine": "terraform", "version": "1.0.0"},
+        }
+        if components is not None:
+            data["components"] = components
+        return JupyterDeployManifestV1(**data)  # type: ignore
+
+    def test_get_components_parses_manifest(self) -> None:
+        manifest = self._make_manifest(
+            components={
+                "traefik": {
+                    "type": "Deployment",
+                    "scope": "router_namespace",
+                    "verbs": {
+                        "status": {"method": "k8s.apps.get-deployment-status"},
+                        "restart": {"method": "k8s.apps.rollout-restart"},
+                    },
+                },
+                "jwt-rotator": {
+                    "type": "CronJob",
+                    "scope": "router_namespace",
+                    "verbs": {
+                        "status": {"method": "k8s.batch.get-cronjob-status"},
+                        "trigger": {"method": "k8s.batch.create-job-from-cronjob"},
+                    },
+                },
+            }
+        )
+        components = manifest.get_components()
+
+        self.assertEqual(len(components), 2)
+        self.assertIn("traefik", components)
+        self.assertIn("jwt-rotator", components)
+
+    def test_get_component_returns_definition(self) -> None:
+        manifest = self._make_manifest(
+            components={
+                "traefik": {
+                    "type": "Deployment",
+                    "scope": "router_namespace",
+                    "verbs": {"status": {"method": "k8s.apps.get-deployment-status"}},
+                },
+            }
+        )
+        component = manifest.get_component("traefik")
+
+        self.assertIsInstance(component, JupyterDeployComponentDefinitionV1)
+        self.assertEqual(component.type, "Deployment")
+        self.assertEqual(component.scope, "router_namespace")
+        self.assertIn("status", component.verbs)
+        self.assertEqual(component.verbs["status"].method, "k8s.apps.get-deployment-status")
+
+    def test_get_component_raises_not_found(self) -> None:
+        manifest = self._make_manifest(
+            components={
+                "traefik": {
+                    "type": "Deployment",
+                    "scope": "ns",
+                    "verbs": {"status": {"method": "k8s.apps.get-deployment-status"}},
+                },
+            }
+        )
+        with self.assertRaises(ComponentNotFoundError) as ctx:
+            manifest.get_component("unknown")
+
+        self.assertEqual(ctx.exception.component_name, "unknown")
+        self.assertIn("traefik", ctx.exception.valid_components)
+
+    def test_get_components_raises_when_none(self) -> None:
+        manifest = self._make_manifest()
+
+        with self.assertRaises(CommandNotImplementedError):
+            manifest.get_components()
+
+    def test_get_component_raises_when_none(self) -> None:
+        manifest = self._make_manifest()
+
+        with self.assertRaises(CommandNotImplementedError):
+            manifest.get_component("traefik")

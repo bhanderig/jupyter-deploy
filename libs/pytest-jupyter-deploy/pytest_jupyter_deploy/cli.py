@@ -2,6 +2,7 @@
 
 import re
 import subprocess
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -26,6 +27,7 @@ class JDCli:
     def __init__(self, project_dir: Path) -> None:
         """Initialize CLI wrapper."""
         self.project_dir = project_dir
+        self._jupyterlab_url: str | None = None
 
     def run_command(
         self,
@@ -135,14 +137,69 @@ class JDCli:
 
         raise ValueError("Could not parse server status from command output")
 
+    def get_scoped_server_status(self, name: str, scope: str = "default") -> str:
+        """Get the status of a named server (workspace) via jd CLI.
+
+        Args:
+            name: Server / workspace name
+            scope: Kubernetes namespace / scope
+
+        Returns:
+            Server status string (e.g., "Running", "Stopped")
+
+        Raises:
+            JDCliError: If command fails
+            ValueError: If status cannot be parsed
+        """
+        result = self.run_command(["jupyter-deploy", "server", "status", "--name", name, "--scope", scope])
+
+        for line in result.stdout.splitlines():
+            if "Server status:" in line:
+                status = line.split(":", 1)[1].strip()
+                status = re.sub(r"\x1b\[[0-9;]*m", "", status)
+                return status
+
+        raise ValueError(f"Could not parse server status for '{name}' from command output")
+
+    def poll_scoped_server_status(
+        self,
+        name: str,
+        target_status: str,
+        scope: str = "default",
+        timeout_s: int = 180,
+        interval_s: int = 10,
+    ) -> None:
+        """Poll server status via jd CLI until it matches target or timeout.
+
+        Args:
+            name: Server / workspace name
+            target_status: Expected status (e.g., "Running", "Stopped")
+            scope: Kubernetes namespace / scope
+            timeout_s: Maximum wait time in seconds
+            interval_s: Seconds between polls
+
+        Raises:
+            TimeoutError: If server does not reach target_status within timeout_s
+        """
+        deadline = time.time() + timeout_s
+        last_status = ""
+        while time.time() < deadline:
+            try:
+                last_status = self.get_scoped_server_status(name, scope)
+                if last_status == target_status:
+                    return
+            except (JDCliError, ValueError):
+                pass
+            time.sleep(interval_s)
+        raise TimeoutError(
+            f"Server '{name}' did not reach status '{target_status}' within {timeout_s}s (last: {last_status})"
+        )
+
     def get_jupyterlab_url(self) -> str:
         """Get the JupyterLab URL by querying the open_url value's terraform output.
 
-        This follows the same pattern as OpenHandler:
-        1. Get the manifest
-        2. Look up the "open_url" declared value
-        3. Get the source_key (terraform output name) from the value definition
-        4. Query that output using jd show
+        The result is cached for the lifetime of this instance since the URL
+        never changes during a test session.
 
         Returns:
             JupyterLab URL string
@@ -150,6 +207,9 @@ class JDCli:
         Raises:
             JDCliError: If command fails
         """
+        if self._jupyterlab_url is not None:
+            return self._jupyterlab_url
+
         # Get manifest and look up the declared value for "open_url"
         manifest_path = self.project_dir / jd_constants.MANIFEST_FILENAME
         manifest = retrieve_project_manifest(manifest_path)
@@ -160,7 +220,8 @@ class JDCli:
 
         # Query the actual terraform output using jd show
         result = self.run_command(["jupyter-deploy", "show", "--output", output_name, "--text"])
-        return result.stdout.strip()
+        self._jupyterlab_url = result.stdout.strip()
+        return self._jupyterlab_url
 
     def get_allowlisted_users(self) -> list[str]:
         """Return the list of allowlisted users, or empty list if none.

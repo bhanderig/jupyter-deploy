@@ -12,11 +12,11 @@ KUBECONFIG_PATH = Path.home() / ".kube" / "config"
 
 
 def test_cluster_status_returns_active(e2e_deployment: EndToEndDeployment) -> None:
-    """Verify that cluster status returns ACTIVE for a running cluster."""
+    """Verify that cluster status returns Active for a running cluster."""
     e2e_deployment.ensure_deployed()
 
     result = e2e_deployment.cli.run_command(["jupyter-deploy", "cluster", "status"])
-    assert "ACTIVE" in result.stdout, f"Expected 'ACTIVE' in output:\n{result.stdout}"
+    assert "Active" in result.stdout, f"Expected 'Active' in output:\n{result.stdout}"
 
 
 # ── cluster show ────────────────────────────────────────────────────────────

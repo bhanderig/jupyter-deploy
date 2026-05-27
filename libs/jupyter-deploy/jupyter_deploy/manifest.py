@@ -60,7 +60,8 @@ class JupyterDeployInstructionArgumentV1(BaseModel):
     model_config = ConfigDict(extra="allow")
     api_attribute: str = Field(alias="api-attribute")
     source: str
-    source_key: str = Field(alias="source-key")
+    source_key: str = Field(default="", alias="source-key")
+    value: str | None = None
     extract: str | None = None
 
     def get_source_type(self) -> InstructionArgumentSource:
@@ -280,6 +281,13 @@ class JupyterDeployComponentDefinitionV1(BaseModel):
     verbs: dict[str, JupyterDeployComponentVerbV1]
 
 
+class JupyterDeployHealthV1(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    active: bool = False
+    expected_status_code: int = Field(alias="expected-status-code", default=200)
+    load_balancer_port: int = Field(alias="load-balancer-port", default=443)
+
+
 class JupyterDeployManifestV1(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
     schema_version: Literal[1]
@@ -295,6 +303,7 @@ class JupyterDeployManifestV1(BaseModel):
     supervised_execution: JupyterDeploySupervisedExecutionV1 | None = Field(alias="supervised-execution", default=None)
     project_store: JupyterDeployProjectStoreV1 | None = Field(alias="project-store", default=None)
     components: dict[str, JupyterDeployComponentDefinitionV1] | None = None
+    health: JupyterDeployHealthV1 | None = None
 
     def get_engine(self) -> EngineType:
         """Return the engine type."""

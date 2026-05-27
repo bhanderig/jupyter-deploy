@@ -139,7 +139,7 @@ class TestHistoryListCommand(unittest.TestCase):
         result = runner.invoke(history_app, ["list", "invalid_command"])
 
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("Invalid value", result.stdout)
+        self.assertIn("Invalid value", result.output)
 
     @patch("jupyter_deploy.cli.history_app.cmd_utils.project_dir")
     @patch("jupyter_deploy.cli.history_app.CommandHistoryHandler")
@@ -482,49 +482,49 @@ class TestParameterValidation(unittest.TestCase):
         result = runner.invoke(history_app, ["list", "config", "-n", "0"])
 
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("Invalid value", result.stdout)
+        self.assertIn("Invalid value", result.output)
 
     def test_list_rejects_n_negative(self) -> None:
         """Test that list command rejects negative n."""
         result = runner.invoke(history_app, ["list", "config", "-n", "-1"])
 
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("Invalid value", result.stdout)
+        self.assertIn("Invalid value", result.output)
 
     def test_show_rejects_n_zero(self) -> None:
         """Test that show command rejects n=0."""
         result = runner.invoke(history_app, ["show", "config", "-n", "0"])
 
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("Invalid value", result.stdout)
+        self.assertIn("Invalid value", result.output)
 
     def test_show_rejects_n_negative(self) -> None:
         """Test that show command rejects negative n."""
         result = runner.invoke(history_app, ["show", "config", "-n", "-1"])
 
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("Invalid value", result.stdout)
+        self.assertIn("Invalid value", result.output)
 
     def test_show_rejects_lines_zero(self) -> None:
         """Test that show command rejects lines=0."""
         result = runner.invoke(history_app, ["show", "config", "-l", "0"])
 
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("Invalid value", result.stdout)
+        self.assertIn("Invalid value", result.output)
 
     def test_show_rejects_lines_negative(self) -> None:
         """Test that show command rejects negative lines."""
         result = runner.invoke(history_app, ["show", "config", "-l", "-1"])
 
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("Invalid value", result.stdout)
+        self.assertIn("Invalid value", result.output)
 
     def test_show_rejects_skip_negative(self) -> None:
         """Test that show command rejects negative skip."""
         result = runner.invoke(history_app, ["show", "config", "-s", "-1"])
 
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("Invalid value", result.stdout)
+        self.assertIn("Invalid value", result.output)
 
     def test_show_accepts_skip_zero(self) -> None:
         """Test that show command accepts skip=0 (valid value)."""
@@ -533,18 +533,18 @@ class TestParameterValidation(unittest.TestCase):
 
         # Should fail on no logs found, NOT on parameter validation
         # If it were parameter validation error, output would mention "Invalid value"
-        self.assertNotIn("Invalid value", result.stdout)
+        self.assertNotIn("Invalid value", result.output)
 
     def test_clear_rejects_keep_zero(self) -> None:
         """Test that clear command rejects keep=0."""
         result = runner.invoke(history_app, ["clear", "config", "--keep", "0"])
 
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("Invalid value", result.stdout)
+        self.assertIn("Invalid value", result.output)
 
     def test_clear_rejects_keep_negative(self) -> None:
         """Test that clear command rejects negative keep."""
         result = runner.invoke(history_app, ["clear", "config", "--keep", "-1"])
 
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("Invalid value", result.stdout)
+        self.assertIn("Invalid value", result.output)

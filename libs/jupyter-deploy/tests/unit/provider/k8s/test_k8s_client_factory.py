@@ -51,8 +51,8 @@ class TestK8sClientFactoryFromEks(unittest.TestCase):
 
         self.assertEqual(result, mock_api_client)
         self.assertEqual(mock_configuration.host, "https://example.eks.amazonaws.com")
-        self.assertEqual(mock_configuration.api_key_prefix["authorization"], "Bearer")
-        self.assertEqual(mock_configuration.api_key["authorization"], "k8s-aws-v1.test-token")
+        self.assertEqual(mock_configuration.api_key_prefix["BearerToken"], "Bearer")
+        self.assertEqual(mock_configuration.api_key["BearerToken"], "k8s-aws-v1.test-token")
         mock_get_token.assert_called_once_with("my-cluster", "us-west-2")
 
     @patch("jupyter_deploy.api.aws.sts.eks_token.get_eks_bearer_token")
@@ -104,4 +104,4 @@ class TestK8sClientFactoryFromEks(unittest.TestCase):
 
         mock_get_token.return_value = "k8s-aws-v1.refreshed-token"
         mock_configuration.refresh_api_key_hook(mock_configuration)
-        self.assertEqual(mock_configuration.api_key["authorization"], "k8s-aws-v1.refreshed-token")
+        self.assertEqual(mock_configuration.api_key["BearerToken"], "k8s-aws-v1.refreshed-token")

@@ -4,6 +4,7 @@ from jupyter_deploy.engine.supervised_execution import DisplayManager
 from jupyter_deploy.exceptions import InstructionNotFoundError
 from jupyter_deploy.provider.aws.aws_ec2_runner import AwsEc2Runner
 from jupyter_deploy.provider.aws.aws_eks_runner import AwsEksRunner
+from jupyter_deploy.provider.aws.aws_elbv2_runner import AwsElbv2Runner
 from jupyter_deploy.provider.aws.aws_error_handler import aws_error_context_manager
 from jupyter_deploy.provider.aws.aws_secretsmanager_runner import AwsSecretsManagerRunner
 from jupyter_deploy.provider.aws.aws_ssm_runner import AwsSsmRunner
@@ -17,6 +18,7 @@ class AwsService(str, Enum):
 
     EC2 = "ec2"
     EKS = "eks"
+    ELBV2 = "elbv2"
     SECRETSMANAGER = "secretsmanager"
     SSM = "ssm"
 
@@ -62,6 +64,10 @@ class AwsApiRunner(InstructionRunner):
             return service_runner
         elif service_name == AwsService.EKS:
             service_runner = AwsEksRunner(self.display_manager, region_name=self.region_name)
+            self.service_runners[service_name] = service_runner
+            return service_runner
+        elif service_name == AwsService.ELBV2:
+            service_runner = AwsElbv2Runner(self.display_manager, region_name=self.region_name)
             self.service_runners[service_name] = service_runner
             return service_runner
         elif service_name == AwsService.SECRETSMANAGER:

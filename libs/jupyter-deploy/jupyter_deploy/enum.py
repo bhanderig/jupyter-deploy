@@ -29,6 +29,7 @@ class InstructionArgumentSource(str, Enum):
     TEMPLATE_OUTPUT = "output"
     CLI_ARGUMENT = "cli"
     INSTRUCTION_RESULT = "result"
+    LITERAL = "literal"
 
     @classmethod
     def from_string(cls, source_str: str) -> "InstructionArgumentSource":

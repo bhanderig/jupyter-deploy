@@ -1,8 +1,8 @@
 """E2E test for full EKS deployment lifecycle from scratch.
 
 These tests only run during fresh deploy (marked full_deployment).
-After `jd config` + `jd up` complete, they verify the cluster and platform
-components are healthy and the getting-started page is accessible.
+After `jd config` + `jd up` complete, they verify the full health stack
+passes and the getting-started page is accessible.
 """
 
 import json
@@ -13,15 +13,6 @@ from pytest_jupyter_deploy.oauth2_proxy.dex import DexGitHubOAuth2ProxyApplicati
 from pytest_jupyter_deploy.plugin import skip_if_testvars_not_set
 
 ORDER_DEPLOYMENT = 1
-
-EXPECTED_DEPLOYMENTS = [
-    "traefik",
-    "dex",
-    "oauth2-proxy",
-    "authmiddleware",
-    "console",
-    "workspace-operator",
-]
 
 EXPECTED_CRONJOBS = [
     "jwt-rotator",
@@ -34,33 +25,53 @@ def test_cluster_active_after_deployment(e2e_deployment: EndToEndDeployment) -> 
     """Cluster status is ACTIVE after deploy."""
     e2e_deployment.ensure_deployed()
     result = e2e_deployment.cli.run_command(["jupyter-deploy", "cluster", "status"])
-    assert "ACTIVE" in result.stdout, f"Expected ACTIVE cluster status, got:\n{result.stdout}"
-
-
-@pytest.mark.order(ORDER_DEPLOYMENT + 1)
-@pytest.mark.full_deployment
-def test_components_healthy_after_deployment(e2e_deployment: EndToEndDeployment) -> None:
-    """All platform components reach healthy state after deploy."""
-    e2e_deployment.ensure_deployed()
-    result = e2e_deployment.cli.run_command(["jupyter-deploy", "component", "health", "--json"])
-    data = json.loads(result.stdout)
-    components = {c["name"]: c for c in data["components"]}
-
-    for name in EXPECTED_DEPLOYMENTS:
-        assert name in components, f"Expected Deployment component '{name}' in health output"
-        c = components[name]
-        assert c["type"] == "Deployment", f"{name}: expected type Deployment, got {c['type']}"
-        assert c["status"] == "Ready", f"{name}: expected status Ready, got {c['status']}"
-        assert c["status_category"] == "healthy", f"{name}: expected healthy, got {c['status_category']}"
-
-    for name in EXPECTED_CRONJOBS:
-        assert name in components, f"Expected CronJob component '{name}' in health output"
-        c = components[name]
-        assert c["type"] == "CronJob", f"{name}: expected type CronJob, got {c['type']}"
-        assert c["status_category"] == "healthy", f"{name}: expected healthy, got {c['status_category']}"
+    assert "Active" in result.stdout, f"Expected Active cluster status, got:\n{result.stdout}"
 
 
 @pytest.mark.order(ORDER_DEPLOYMENT + 2)
+@pytest.mark.full_deployment
+def test_health_all_pass_after_deployment(e2e_deployment: EndToEndDeployment) -> None:
+    """All health layers pass after a fresh deploy."""
+    e2e_deployment.ensure_deployed()
+    result = e2e_deployment.cli.run_command(["jupyter-deploy", "health", "--json"])
+    data = json.loads(result.stdout)
+
+    assert "connection" in data, f"Expected 'connection' key, got: {list(data.keys())}"
+    conn = data["connection"]
+    assert conn["status_category"] == "healthy", (
+        f"Connection not healthy: status_category={conn['status_category']}, detail={conn['detail']}"
+    )
+
+    layers = data["layers"]
+    assert len(layers) >= 3, f"Expected at least 3 health rows, got {len(layers)}"
+
+    layer_names = {entry["layer"] for entry in layers}
+    assert "cluster" in layer_names, f"Expected 'cluster' layer, got: {layer_names}"
+    assert "load-balancer" in layer_names, f"Expected 'load-balancer' layer, got: {layer_names}"
+    assert "components" in layer_names, f"Expected 'components' layer, got: {layer_names}"
+
+    manifest = e2e_deployment.get_manifest()
+    manifest_components = manifest.get_components()
+    component_entries = [e for e in layers if e["layer"] == "components"]
+    component_names = {e["name"] for e in component_entries}
+    for name in manifest_components:
+        assert name in component_names, f"Expected component '{name}' in health output"
+
+    for entry in layers:
+        if entry["name"] in EXPECTED_CRONJOBS:
+            assert entry["status_category"] in ("healthy", "in-progress"), (
+                f"CronJob '{entry['name']}' unexpected status: "
+                f"status_category={entry['status_category']}, detail={entry['detail']}"
+            )
+        else:
+            assert entry["status_category"] == "healthy", (
+                f"Layer '{entry['layer']}' ({entry['name']}) not healthy: "
+                f"status_category={entry['status_category']}, status={entry['status']}, detail={entry['detail']}"
+            )
+        assert entry["status"], f"Layer '{entry['layer']}' ({entry['name']}) has empty status"
+
+
+@pytest.mark.order(ORDER_DEPLOYMENT + 3)
 @pytest.mark.full_deployment
 @skip_if_testvars_not_set(["JD_E2E_USER"])
 def test_getting_started_accessible_after_deployment(
@@ -76,7 +87,7 @@ def test_getting_started_accessible_after_deployment(
     )
 
 
-@pytest.mark.order(ORDER_DEPLOYMENT + 3)
+@pytest.mark.order(ORDER_DEPLOYMENT + 4)
 @pytest.mark.full_deployment
 def test_deployment_history_captured(e2e_deployment: EndToEndDeployment) -> None:
     """Config and up logs are captured in jd history after deployment."""

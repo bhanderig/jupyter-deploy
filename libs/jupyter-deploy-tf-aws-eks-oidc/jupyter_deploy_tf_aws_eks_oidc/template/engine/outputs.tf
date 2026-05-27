@@ -99,3 +99,11 @@ output "server_default_scope" {
   value       = var.workspace_rbac_namespaces[0]
 }
 
+output "load_balancer_tags" {
+  description = "JSON-encoded tags used to look up the ingress load balancer via Resource Groups Tagging API."
+  value = jsonencode({
+    "kubernetes.io/cluster/${module.eks_cluster.cluster_name}" = "owned"
+    "kubernetes.io/service-name"                               = "${var.workspace_router_namespace}/traefik"
+  })
+}
+

@@ -3,6 +3,10 @@ template:
   name: tf-aws-eks-oidc
   engine: terraform
   version: 0.1.0
+health:
+  active: true
+  expected-status-code: 302
+  load-balancer-port: 443
 requirements:
 - name: terraform
 - name: awscli
@@ -129,6 +133,9 @@ commands:
   - result-name: cluster.show.name
     source: result
     source-key: '[0].ClusterName'
+  - result-name: cluster.show.label
+    source: result
+    source-key: '[0].Label'
   - result-name: cluster.show.status
     source: result
     source-key: '[0].Status'
@@ -138,6 +145,26 @@ commands:
   - result-name: cluster.show.version
     source: result
     source-key: '[0].Version'
+- cmd: cluster.loadbalancer.health
+  sequence:
+  - api-name: aws.elbv2.describe-load-balancer-health
+    arguments:
+    - api-attribute: tags
+      source: output
+      source-key: load_balancer_tags
+    - api-attribute: resource_type_filter
+      source: literal
+      value: "elasticloadbalancing:loadbalancer/net"
+  results:
+  - result-name: cluster.loadbalancer.health.state
+    source: result
+    source-key: '[0].State'
+  - result-name: cluster.loadbalancer.health.label
+    source: result
+    source-key: '[0].Label'
+  - result-name: cluster.loadbalancer.health.scheme
+    source: result
+    source-key: '[0].Scheme'
 - cmd: host.list
   sequence:
   - api-name: k8s.core.list-nodes

@@ -2,10 +2,16 @@ import subprocess
 import unittest
 from unittest.mock import Mock, patch
 
+from botocore.exceptions import ClientError
+
 from jupyter_deploy.engine.supervised_execution import NullDisplay
 from jupyter_deploy.exceptions import ConfigurationError, InstructionNotFoundError
 from jupyter_deploy.provider.aws.aws_eks_runner import AwsEksRunner
 from jupyter_deploy.provider.resolved_argdefs import StrResolvedInstructionArgument
+
+
+class _ResourceNotFoundException(ClientError):
+    pass
 
 
 class TestAwsEksRunner(unittest.TestCase):
@@ -158,6 +164,56 @@ class TestAwsEksRunner(unittest.TestCase):
                     "cluster_name": StrResolvedInstructionArgument(argument_name="cluster_name", value="bad-cluster"),
                 },
             )
+
+    @patch("jupyter_deploy.provider.aws.aws_eks_runner.eks_cluster")
+    @patch("jupyter_deploy.provider.aws.aws_eks_runner.boto3")
+    def test_describe_cluster_not_found_returns_not_found_status(
+        self, mock_boto3: Mock, mock_eks_cluster: Mock
+    ) -> None:
+        mock_client: Mock = Mock()
+        mock_client.exceptions.ResourceNotFoundException = _ResourceNotFoundException
+        mock_boto3.client.return_value = mock_client
+        mock_eks_cluster.describe_cluster.side_effect = _ResourceNotFoundException(
+            {"Error": {"Code": "ResourceNotFoundException", "Message": "Cluster not found"}},
+            "DescribeCluster",
+        )
+
+        runner = AwsEksRunner(NullDisplay(), region_name="us-west-2")
+        result = runner.execute_instruction(
+            instruction_name="describe-cluster",
+            resolved_arguments={
+                "cluster_name": StrResolvedInstructionArgument(argument_name="cluster_name", value="gone-cluster"),
+            },
+        )
+
+        self.assertEqual(result["Status"].value, "NOT_FOUND")
+        self.assertEqual(result["ClusterName"].value, "gone-cluster")
+        self.assertEqual(result["Label"].value, "AWS EKS cluster")
+        self.assertEqual(result["Endpoint"].value, "")
+        self.assertEqual(result["Version"].value, "")
+
+    @patch("jupyter_deploy.provider.aws.aws_eks_runner.eks_cluster")
+    @patch("jupyter_deploy.provider.aws.aws_eks_runner.boto3")
+    def test_describe_cluster_other_client_error_bubbles_up(self, mock_boto3: Mock, mock_eks_cluster: Mock) -> None:
+        mock_client: Mock = Mock()
+        mock_client.exceptions.ResourceNotFoundException = _ResourceNotFoundException
+        mock_boto3.client.return_value = mock_client
+        mock_eks_cluster.describe_cluster.side_effect = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "Access Denied"}},
+            "DescribeCluster",
+        )
+
+        runner = AwsEksRunner(NullDisplay(), region_name="us-west-2")
+
+        with self.assertRaises(ClientError) as ctx:
+            runner.execute_instruction(
+                instruction_name="describe-cluster",
+                resolved_arguments={
+                    "cluster_name": StrResolvedInstructionArgument(argument_name="cluster_name", value="my-cluster"),
+                },
+            )
+
+        self.assertEqual(ctx.exception.response["Error"]["Code"], "AccessDeniedException")
 
     @patch("jupyter_deploy.provider.aws.aws_eks_runner.boto3")
     def test_unknown_instruction_raises_error(self, mock_boto3: Mock) -> None:

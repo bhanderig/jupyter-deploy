@@ -21,6 +21,7 @@ dependencies = [
     "pyyaml>=6.0.2",
     "types-pyyaml>=6.0.12.20250516",
     "pathspec>=0.12.1",
+    "certifi>=2024.0.0",
 ]
 
 [project.scripts]
@@ -36,6 +37,8 @@ aws = [
     "boto3-stubs>=1.38.23",
     "mypy-boto3-ec2>=1.40.4",
     "mypy-boto3-eks>=1.38.0",
+    "mypy-boto3-elbv2>=1.38.0",
+    "mypy-boto3-resourcegroupstaggingapi>=1.38.0",
     "mypy-boto3-ssm>=1.38.5",
     "mypy-boto3-s3>=1.38.0",
     "mypy-boto3-dynamodb>=1.38.0",

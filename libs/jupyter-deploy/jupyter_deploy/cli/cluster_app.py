@@ -59,7 +59,7 @@ def status(
         with simple_display_manager.spinner("Checking cluster status..."):
             result = handler.get_cluster_status()
 
-        console.print(f"Cluster status: [bold cyan]{result}[/]")
+        console.print(f"Cluster status: [bold cyan]{result.title()}[/]")
 
 
 @cluster_app.command()

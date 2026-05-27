@@ -1,6 +1,10 @@
+import socket
 import webbrowser
+from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
+from jupyter_deploy.connection_utils import https_connection, resolve_ips
 from jupyter_deploy.engine.engine_open import EngineOpenHandler
 from jupyter_deploy.engine.enum import EngineType
 from jupyter_deploy.engine.outdefs import StrTemplateOutputDefinition
@@ -10,6 +14,13 @@ from jupyter_deploy.exceptions import OpenWebBrowserError, UrlNotAvailableError,
 from jupyter_deploy.handlers.base_project_handler import BaseProjectHandler
 from jupyter_deploy.provider import manifest_command_runner as cmd_runner
 from jupyter_deploy.provider.resolved_clidefs import ResolvedCliParameter, StrResolvedCliParameter
+
+
+@dataclass
+class OpenHealthResult:
+    url: str
+    healthy: bool
+    detail: str
 
 
 class OpenHandler(BaseProjectHandler):
@@ -116,3 +127,39 @@ class OpenHandler(BaseProjectHandler):
             raise OpenWebBrowserError("Failed to open URL in browser.", url)
 
         return url
+
+    def health(self, expected_status_code: int = 200, port: int = 443) -> OpenHealthResult:
+        """Check connection: DNS resolution and HTTP ping.
+
+        Args:
+            expected_status_code: The HTTP status code that indicates healthy.
+            port: The port to use for DNS resolution check.
+
+        Raises:
+            UrlNotAvailableError: If URL cannot be retrieved.
+        """
+        url = self.get_url()
+        domain = urlparse(url).hostname or ""
+
+        try:
+            resolved_ips = resolve_ips(domain, port)
+        except (socket.gaierror, ValueError) as e:
+            return OpenHealthResult(url=url, healthy=False, detail=f"{domain} does not resolve: {e}")
+
+        try:
+            path = urlparse(url).path or "/"
+            with https_connection(domain, port) as conn:
+                conn.request("GET", path)
+                status_code = conn.getresponse().status
+        except Exception as e:
+            return OpenHealthResult(
+                url=url, healthy=False, detail=f"{domain} -> {', '.join(resolved_ips)}, unreachable: {e}"
+            )
+
+        healthy = status_code == expected_status_code
+        if healthy:
+            detail = f"{domain} -> {', '.join(resolved_ips)}, status={status_code}"
+        else:
+            detail = f"{domain} -> {', '.join(resolved_ips)}, status={status_code} (expected {expected_status_code})"
+
+        return OpenHealthResult(url=url, healthy=healthy, detail=detail)

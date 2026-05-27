@@ -168,10 +168,17 @@ class TestClusterHandler(unittest.TestCase):
         mock_cmd = Mock()
         mock_cmd.cmd = "cluster.show"
         mock_result_name = Mock(result_name="cluster.show.name")
+        mock_result_label = Mock(result_name="cluster.show.label")
         mock_result_status = Mock(result_name="cluster.show.status")
         mock_result_endpoint = Mock(result_name="cluster.show.endpoint")
         mock_result_version = Mock(result_name="cluster.show.version")
-        mock_cmd.results = [mock_result_name, mock_result_status, mock_result_endpoint, mock_result_version]
+        mock_cmd.results = [
+            mock_result_name,
+            mock_result_label,
+            mock_result_status,
+            mock_result_endpoint,
+            mock_result_version,
+        ]
         mock_manifest_fns["get_command"].return_value = mock_cmd
         mock_retrieve_manifest.return_value = mock_manifest
         mock_tf_outputs_handler.return_value = Mock()
@@ -180,6 +187,7 @@ class TestClusterHandler(unittest.TestCase):
         mock_cmd_runner, mock_cmd_runner_fns = self.get_mock_cmd_runner_and_fns()
         mock_cmd_runner_fns["get_result_value_with_fallback"].side_effect = [
             "my-cluster",
+            "EKS",
             "ACTIVE",
             "https://ABC.eks.amazonaws.com",
             "1.29.0",

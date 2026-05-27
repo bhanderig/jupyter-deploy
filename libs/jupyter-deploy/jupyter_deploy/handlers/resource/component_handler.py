@@ -5,7 +5,7 @@ from jupyter_deploy.engine.enum import EngineType
 from jupyter_deploy.engine.outdefs import StrTemplateOutputDefinition
 from jupyter_deploy.engine.supervised_execution import DisplayManager
 from jupyter_deploy.engine.terraform import tf_outputs, tf_variables
-from jupyter_deploy.exceptions import InvalidComponentVerbError
+from jupyter_deploy.exceptions import InvalidComponentVerbError, ResourceNotFoundError
 from jupyter_deploy.handlers.base_project_handler import BaseProjectHandler
 from jupyter_deploy.handlers.resource.resource_utils import collect_results
 from jupyter_deploy.manifest import JupyterDeployComponentDefinitionV1
@@ -87,20 +87,26 @@ class ComponentHandler(BaseProjectHandler):
         results: list[dict[str, str]] = []
         for name, comp_def in components.items():
             namespace = self._resolve_namespace(comp_def)
-            cmd_name = self._get_command_name(comp_def, "status")
-            command = self.project_manifest.get_command(cmd_name)
-            runner = cmd_runner.ManifestCommandRunner(
-                display_manager=self.display_manager,
-                output_handler=self._output_handler,
-                variable_handler=self._variable_handler,
-            )
-            resource_name = self._get_resource_name(name, comp_def)
-            cli_paramdefs = self._build_cli_paramdefs(resource_name, comp_def, namespace)
-            runner.run_command_sequence(command, cli_paramdefs=cli_paramdefs)
-            status = runner.get_result_value(command, f"{cmd_name}.status", str)
-            status_category = runner.get_result_value_with_fallback(command, f"{cmd_name}.status_category", str, "")
-            details = runner.get_result_value_with_fallback(command, f"{cmd_name}.details", str, "")
-            sub_component = runner.get_result_value_with_fallback(command, f"{cmd_name}.sub_component", str, "")
+            try:
+                cmd_name = self._get_command_name(comp_def, "status")
+                command = self.project_manifest.get_command(cmd_name)
+                runner = cmd_runner.ManifestCommandRunner(
+                    display_manager=self.display_manager,
+                    output_handler=self._output_handler,
+                    variable_handler=self._variable_handler,
+                )
+                resource_name = self._get_resource_name(name, comp_def)
+                cli_paramdefs = self._build_cli_paramdefs(resource_name, comp_def, namespace)
+                runner.run_command_sequence(command, cli_paramdefs=cli_paramdefs)
+                status = runner.get_result_value(command, f"{cmd_name}.status", str)
+                status_category = runner.get_result_value_with_fallback(command, f"{cmd_name}.status_category", str, "")
+                details = runner.get_result_value_with_fallback(command, f"{cmd_name}.details", str, "")
+                sub_component = runner.get_result_value_with_fallback(command, f"{cmd_name}.sub_component", str, "")
+            except ResourceNotFoundError:
+                status = "Not Found"
+                status_category = "degraded"
+                details = f"{comp_def.type.lower()} '{name}' not found"
+                sub_component = ""
             results.append(
                 {
                     "name": name,

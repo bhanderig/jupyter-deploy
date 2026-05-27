@@ -43,7 +43,17 @@ class AwsEksRunner(InstructionRunner):
         cluster_name_arg = require_arg(resolved_arguments, "cluster_name", StrResolvedInstructionArgument)
 
         self.display_manager.info(f"Describing EKS cluster: {cluster_name_arg.value}")
-        cluster = eks_cluster.describe_cluster(self.client, cluster_name=cluster_name_arg.value)
+        try:
+            cluster = eks_cluster.describe_cluster(self.client, cluster_name=cluster_name_arg.value)
+        except self.client.exceptions.ResourceNotFoundException:
+            return {
+                "ClusterName": StrResolvedInstructionResult(result_name="ClusterName", value=cluster_name_arg.value),
+                "Label": StrResolvedInstructionResult(result_name="Label", value="AWS EKS cluster"),
+                "Status": StrResolvedInstructionResult(result_name="Status", value="NOT_FOUND"),
+                "Endpoint": StrResolvedInstructionResult(result_name="Endpoint", value=""),
+                "Version": StrResolvedInstructionResult(result_name="Version", value=""),
+                "CertificateAuthority": StrResolvedInstructionResult(result_name="CertificateAuthority", value=""),
+            }
 
         ca_data = ""
         if cert_auth := cluster.get("certificateAuthority"):
@@ -51,6 +61,7 @@ class AwsEksRunner(InstructionRunner):
 
         return {
             "ClusterName": StrResolvedInstructionResult(result_name="ClusterName", value=cluster.get("name", "")),
+            "Label": StrResolvedInstructionResult(result_name="Label", value="AWS EKS cluster"),
             "Status": StrResolvedInstructionResult(result_name="Status", value=cluster.get("status", "")),
             "Endpoint": StrResolvedInstructionResult(result_name="Endpoint", value=cluster.get("endpoint", "")),
             "Version": StrResolvedInstructionResult(result_name="Version", value=cluster.get("version", "")),

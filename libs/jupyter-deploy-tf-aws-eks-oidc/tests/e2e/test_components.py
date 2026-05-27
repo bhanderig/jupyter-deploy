@@ -46,64 +46,17 @@ def _poll_component_status(
 
 def _get_component_last_updated(e2e_deployment: EndToEndDeployment, name: str) -> datetime | None:
     """Get the last_updated timestamp of the sub_component from health JSON."""
-    result = e2e_deployment.cli.run_command(["jupyter-deploy", "component", "health", "--json"])
+    result = e2e_deployment.cli.run_command(["jupyter-deploy", "health", "--components", "--json"])
     data = json.loads(result.stdout)
-    for comp in data["components"]:
-        if comp["name"] == name and comp.get("sub_component"):
-            sub = json.loads(comp["sub_component"])
+    for entry in data["layers"]:
+        if entry["name"] == name and entry.get("sub_component"):
+            sub = json.loads(entry["sub_component"])
             if sub.get("last_updated"):
                 dt = datetime.fromisoformat(sub["last_updated"])
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=UTC)
                 return dt
     return None
-
-
-# ── component health ────────────────────────────────────────────────────────
-
-
-def test_component_health(e2e_deployment: EndToEndDeployment) -> None:
-    """Verify health dashboard shows all components with populated fields."""
-    e2e_deployment.ensure_deployed()
-
-    components = _get_manifest_components(e2e_deployment)
-    result = e2e_deployment.cli.run_command(["jupyter-deploy", "component", "health"])
-    output = result.stdout
-
-    for name in components:
-        assert name in output, f"Expected component '{name}' in health output"
-
-    types = {comp.type for comp in components.values()}
-    for comp_type in types:
-        assert comp_type in output, f"Expected type '{comp_type}' in health output"
-
-
-def test_component_health_json(e2e_deployment: EndToEndDeployment) -> None:
-    """Verify health --json returns valid JSON with all components and expected keys."""
-    e2e_deployment.ensure_deployed()
-
-    manifest_components = _get_manifest_components(e2e_deployment)
-    result = e2e_deployment.cli.run_command(["jupyter-deploy", "component", "health", "--json"])
-    data = json.loads(result.stdout)
-
-    assert "components" in data, f"Expected 'components' key, got: {list(data.keys())}"
-    components = data["components"]
-    assert len(components) == len(manifest_components), (
-        f"Expected {len(manifest_components)} components, got {len(components)}"
-    )
-
-    names = [c["name"] for c in components]
-    for name in manifest_components:
-        assert name in names, f"Expected component '{name}' in JSON output"
-
-    expected_types = {comp.type for comp in manifest_components.values()}
-    for comp in components:
-        assert comp["status"], f"Component '{comp['name']}' has empty status"
-        assert comp["type"] in expected_types, f"Component '{comp['name']}' has unexpected type: {comp['type']}"
-        assert comp["status_category"] in ("healthy", "in-progress", "degraded"), (
-            f"Component '{comp['name']}' has unexpected status_category: {comp['status_category']}"
-        )
-        assert comp["details"], f"Component '{comp['name']}' has empty details"
 
 
 # ── component list ──────────────────────────────────────────────────────────
@@ -167,6 +120,7 @@ def test_component_list_text(e2e_deployment: EndToEndDeployment) -> None:
 # ── component status ────────────────────────────────────────────────────────
 
 
+@pytest.mark.usefixtures("cluster_login")
 def test_component_status_happy_case(e2e_deployment: EndToEndDeployment) -> None:
     """Verify status returns a non-empty result for each component."""
     e2e_deployment.ensure_deployed()
@@ -176,6 +130,7 @@ def test_component_status_happy_case(e2e_deployment: EndToEndDeployment) -> None
         assert f"{name} status:" in result.stdout, f"Expected '{name} status:' in output:\n{result.stdout}"
 
 
+@pytest.mark.usefixtures("cluster_login")
 def test_component_status_not_found(e2e_deployment: EndToEndDeployment) -> None:
     """Verify status for a non-existent component fails gracefully."""
     e2e_deployment.ensure_deployed()
@@ -187,6 +142,7 @@ def test_component_status_not_found(e2e_deployment: EndToEndDeployment) -> None:
 # ── component show ──────────────────────────────────────────────────────────
 
 
+@pytest.mark.usefixtures("cluster_login")
 def test_component_show_deployment(e2e_deployment: EndToEndDeployment) -> None:
     """Verify show returns output for a Deployment component."""
     e2e_deployment.ensure_deployed()
@@ -196,6 +152,7 @@ def test_component_show_deployment(e2e_deployment: EndToEndDeployment) -> None:
     assert result.stdout.strip(), "Expected non-empty output for component show"
 
 
+@pytest.mark.usefixtures("cluster_login")
 def test_component_show_deployment_json(e2e_deployment: EndToEndDeployment) -> None:
     """Verify show --json returns valid JSON with expected fields for a Deployment."""
     e2e_deployment.ensure_deployed()
@@ -208,6 +165,7 @@ def test_component_show_deployment_json(e2e_deployment: EndToEndDeployment) -> N
     assert data["name"] == name
 
 
+@pytest.mark.usefixtures("cluster_login")
 def test_component_show_job(e2e_deployment: EndToEndDeployment) -> None:
     """Verify show returns output for a CronJob component."""
     e2e_deployment.ensure_deployed()
@@ -234,6 +192,7 @@ def test_component_show_description(e2e_deployment: EndToEndDeployment) -> None:
     assert expected_desc in result.stdout, f"Expected description '{expected_desc}' in output:\n{result.stdout}"
 
 
+@pytest.mark.usefixtures("cluster_login")
 def test_component_show_not_found(e2e_deployment: EndToEndDeployment) -> None:
     """Verify show for a non-existent component fails gracefully."""
     e2e_deployment.ensure_deployed()
@@ -294,6 +253,7 @@ def test_component_logs_not_found(e2e_deployment: EndToEndDeployment) -> None:
 # ── component restart ───────────────────────────────────────────────────────
 
 
+@pytest.mark.usefixtures("cluster_login")
 def test_component_restart(e2e_deployment: EndToEndDeployment) -> None:
     """Verify restart completes: polls until Ready, verifies pod age < 5 minutes."""
     e2e_deployment.ensure_deployed()
@@ -310,6 +270,7 @@ def test_component_restart(e2e_deployment: EndToEndDeployment) -> None:
     assert age_minutes < 5, f"Expected pod last_updated < 5 minutes after restart, got {age_minutes:.1f}m"
 
 
+@pytest.mark.usefixtures("cluster_login")
 def test_component_restart_wrong_type(e2e_deployment: EndToEndDeployment) -> None:
     """Verify restart fails for a CronJob component (wrong type)."""
     e2e_deployment.ensure_deployed()
@@ -319,6 +280,7 @@ def test_component_restart_wrong_type(e2e_deployment: EndToEndDeployment) -> Non
         e2e_deployment.cli.run_command(["jupyter-deploy", "component", "restart", "--name", name])
 
 
+@pytest.mark.usefixtures("cluster_login")
 def test_component_restart_not_found(e2e_deployment: EndToEndDeployment) -> None:
     """Verify restart for a non-existent component fails gracefully."""
     e2e_deployment.ensure_deployed()
@@ -330,6 +292,7 @@ def test_component_restart_not_found(e2e_deployment: EndToEndDeployment) -> None
 # ── component trigger ───────────────────────────────────────────────────────
 
 
+@pytest.mark.usefixtures("cluster_login")
 def test_component_trigger(e2e_deployment: EndToEndDeployment) -> None:
     """Verify trigger creates a Job, polls until Idle, verifies last run < 2 minutes."""
     e2e_deployment.ensure_deployed()
@@ -347,6 +310,7 @@ def test_component_trigger(e2e_deployment: EndToEndDeployment) -> None:
     assert age_minutes < 2, f"Expected last run last_updated < 2 minutes after trigger, got {age_minutes:.1f}m"
 
 
+@pytest.mark.usefixtures("cluster_login")
 def test_component_trigger_wrong_type(e2e_deployment: EndToEndDeployment) -> None:
     """Verify trigger fails for a Deployment component (wrong type)."""
     e2e_deployment.ensure_deployed()
@@ -356,6 +320,7 @@ def test_component_trigger_wrong_type(e2e_deployment: EndToEndDeployment) -> Non
         e2e_deployment.cli.run_command(["jupyter-deploy", "component", "trigger", "--name", name])
 
 
+@pytest.mark.usefixtures("cluster_login")
 def test_component_trigger_not_found(e2e_deployment: EndToEndDeployment) -> None:
     """Verify trigger for a non-existent component fails gracefully."""
     e2e_deployment.ensure_deployed()

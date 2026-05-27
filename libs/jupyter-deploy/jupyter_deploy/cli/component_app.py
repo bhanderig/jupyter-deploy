@@ -9,72 +9,12 @@ from rich.table import Table
 from jupyter_deploy import cmd_utils
 from jupyter_deploy.cli.error_decorator import handle_cli_errors
 from jupyter_deploy.cli.simple_display import SimpleDisplayManager
-from jupyter_deploy.enum import StatusCategory
 from jupyter_deploy.handlers.resource import component_handler
-
-
-def _format_sub_component(raw: str) -> str:
-    if not raw:
-        return ""
-    try:
-        item = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return ""
-    if not item:
-        return ""
-    return f"{item['name']}: {item['status']}"
-
 
 component_app = typer.Typer(
     help="Interact with the platform components supporting your apps.",
     no_args_is_help=True,
 )
-
-
-@component_app.command()
-def health(
-    project_dir: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory of the project."),
-    ] = None,
-    json_output: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
-) -> None:
-    """Display a summary of all components and their status.
-
-    Run either from a project directory that you created with <jd init>;
-    or pass --path <project-dir>.
-    """
-    console = Console()
-
-    with handle_cli_errors(console), cmd_utils.project_dir(project_dir):
-        simple_display_manager = SimpleDisplayManager(console=console)
-        handler = component_handler.ComponentHandler(display_manager=simple_display_manager)
-
-        with simple_display_manager.spinner("Checking component status..."):
-            results = handler.get_all_status()
-
-        if json_output:
-            console.print(json.dumps({"components": results}), highlight=False, markup=False, soft_wrap=True)
-            return
-
-        table = Table()
-        table.add_column("Name", style="bold cyan")
-        table.add_column("Type")
-        table.add_column("Status")
-        table.add_column("Details")
-        table.add_column("Sub-component")
-        for r in results:
-            status_text = r["status"]
-            category = r.get("status_category", "")
-            if category == StatusCategory.HEALTHY:
-                status_text = f"[green]{status_text}[/green]"
-            elif category == StatusCategory.IN_PROGRESS:
-                status_text = f"[dark_goldenrod]{status_text}[/dark_goldenrod]"
-            elif category == StatusCategory.DEGRADED:
-                status_text = f"[indian_red]{status_text}[/indian_red]"
-            sub_text = _format_sub_component(r.get("sub_component", ""))
-            table.add_row(r["name"], r["type"], status_text, r["details"], sub_text)
-        console.print(table)
 
 
 @component_app.command(name="list")

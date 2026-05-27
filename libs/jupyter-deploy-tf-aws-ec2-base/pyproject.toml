@@ -14,6 +14,8 @@ dependencies = [
     "boto3-stubs",
     "mypy-boto3-ec2",
     "mypy-boto3-eks",
+    "mypy-boto3-elbv2",
+    "mypy-boto3-resourcegroupstaggingapi",
     "mypy-boto3-ssm",
     "mypy-boto3-s3",
     "mypy-boto3-dynamodb",

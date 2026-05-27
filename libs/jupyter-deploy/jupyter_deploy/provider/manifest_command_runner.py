@@ -10,6 +10,7 @@ from jupyter_deploy.manifest import JupyterDeployCommandV1
 from jupyter_deploy.provider.instruction_runner_factory import InstructionRunnerFactory
 from jupyter_deploy.provider.resolved_argdefs import (
     ResolvedInstructionArgument,
+    StrResolvedInstructionArgument,
     _extract_json_path,
     resolve_cliparam_argdef,
     resolve_output_argdef,
@@ -78,6 +79,10 @@ class ManifestCommandRunner:
                 elif arg_source_type == InstructionArgumentSource.CLI_ARGUMENT:
                     resolved_argdefs[arg_name] = resolve_cliparam_argdef(
                         paramdefs=cli_paramdefs, arg_name=arg_name, source_key=source_key
+                    )
+                elif arg_source_type == InstructionArgumentSource.LITERAL:
+                    resolved_argdefs[arg_name] = StrResolvedInstructionArgument(
+                        argument_name=arg_name, value=arg_def.value or ""
                     )
                 else:
                     raise InvalidInstructionArgumentError(f"Argument source is not handled: {arg_source_type}")

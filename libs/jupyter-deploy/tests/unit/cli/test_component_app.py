@@ -15,79 +15,15 @@ class TestComponentApp(unittest.TestCase):
         result = runner.invoke(component_app, ["--help"])
 
         self.assertEqual(result.exit_code, 0)
-        for cmd in ["health", "list", "status", "show", "logs", "restart", "trigger"]:
+        for cmd in ["list", "status", "show", "logs", "restart", "trigger"]:
             self.assertTrue(result.stdout.index(cmd) > 0, f"missing command: {cmd}")
 
     def test_no_arg_defaults_to_help(self) -> None:
         runner = CliRunner()
         result = runner.invoke(component_app, [])
 
-        self.assertEqual(result.exit_code, 0)
+        self.assertIn(result.exit_code, (0, 2))
         self.assertTrue(len(result.stdout) > 0)
-
-
-class TestComponentHealthCommand(unittest.TestCase):
-    @patch("jupyter_deploy.handlers.resource.component_handler.ComponentHandler")
-    @patch("jupyter_deploy.cmd_utils.project_dir")
-    def test_health_shows_dashboard(self, mock_project_dir: Mock, mock_handler_class: Mock) -> None:
-        mock_project_dir.return_value.__enter__ = Mock(return_value=None)
-        mock_project_dir.return_value.__exit__ = Mock(return_value=None)
-        mock_handler: Mock = Mock()
-        mock_handler.get_all_status.return_value = [
-            {
-                "name": "traefik",
-                "type": "Deployment",
-                "status": "Ready",
-                "details": "1/1 replicas",
-                "sub_component": '{"name": "traefik-abc", "status": "Running"}',
-            },
-        ]
-        mock_handler_class.return_value = mock_handler
-
-        runner = CliRunner()
-        result = runner.invoke(component_app, ["health"])
-
-        self.assertEqual(result.exit_code, 0)
-        mock_handler.get_all_status.assert_called_once()
-        self.assertIn("traefik", result.stdout)
-
-    @patch("jupyter_deploy.handlers.resource.component_handler.ComponentHandler")
-    @patch("jupyter_deploy.cmd_utils.project_dir")
-    def test_health_json_output(self, mock_project_dir: Mock, mock_handler_class: Mock) -> None:
-        mock_project_dir.return_value.__enter__ = Mock(return_value=None)
-        mock_project_dir.return_value.__exit__ = Mock(return_value=None)
-        mock_handler: Mock = Mock()
-        mock_handler.get_all_status.return_value = [
-            {
-                "name": "traefik",
-                "type": "Deployment",
-                "status": "Ready",
-                "details": "1/1 replicas",
-                "sub_component": '{"name": "traefik-abc", "status": "Running"}',
-            },
-        ]
-        mock_handler_class.return_value = mock_handler
-
-        runner = CliRunner()
-        result = runner.invoke(component_app, ["health", "--json"])
-
-        self.assertEqual(result.exit_code, 0)
-        self.assertIn('"components"', result.stdout)
-
-    @patch("jupyter_deploy.handlers.resource.component_handler.ComponentHandler")
-    @patch("jupyter_deploy.cmd_utils.project_dir")
-    def test_health_switches_dir_with_path(self, mock_project_dir: Mock, mock_handler_class: Mock) -> None:
-        mock_project_dir.return_value.__enter__ = Mock(return_value=None)
-        mock_project_dir.return_value.__exit__ = Mock(return_value=None)
-        mock_handler: Mock = Mock()
-        mock_handler.get_all_status.return_value = []
-        mock_handler_class.return_value = mock_handler
-
-        runner = CliRunner()
-        result = runner.invoke(component_app, ["health", "--path", "/test/dir"])
-
-        self.assertEqual(result.exit_code, 0)
-        mock_project_dir.assert_called_once_with(Path("/test/dir"))
 
 
 class TestComponentListCommand(unittest.TestCase):

@@ -166,3 +166,42 @@ Pulumi.*.yaml
         output = mock_write_text.call_args[0][0]
         assert "{{ missing-snippet }}" in output
         mock_unlink.assert_called_once()  # Template file should be deleted
+
+    @patch("pathlib.Path.unlink")
+    @patch("pathlib.Path.read_text")
+    @patch("pathlib.Path.write_text")
+    @patch("pathlib.Path.exists")
+    def test_generate_troubleshoot_md(
+        self, mock_exists: Mock, mock_write_text: Mock, mock_read_text: Mock, mock_unlink: Mock
+    ) -> None:
+        """Test generate_troubleshoot_md with single snippet."""
+        # Setup
+        mock_exists.return_value = True
+
+        template_content = "Quota: {{ request-quota-increase-instructions }}"
+        quota_snippet = "Request a higher limit:\n```bash\naws service-quotas ...\n```"
+
+        # First read is template, second is snippet
+        mock_read_text.side_effect = [template_content, quota_snippet]
+
+        # Execute
+        self.generator.generate_troubleshoot_md()
+
+        # Assert
+        assert mock_write_text.called
+        output = mock_write_text.call_args[0][0]
+        assert "service-quotas" in output
+        assert "{{" not in output  # No placeholders remain
+        mock_unlink.assert_called_once()  # Template file should be deleted
+
+    @patch("pathlib.Path.exists")
+    def test_generate_troubleshoot_md_no_template(self, mock_exists: Mock) -> None:
+        """Test generate_troubleshoot_md when template doesn't exist."""
+        # Setup
+        mock_exists.return_value = False
+
+        # Execute
+        self.generator.generate_troubleshoot_md()
+
+        # Assert - should not raise, just return
+        mock_exists.assert_called_once()

@@ -9,6 +9,7 @@ MANDATORY_TEMPLATE_STRPATHS: list[str] = [
     "manifest.yaml",
     "variables.yaml",
     "AGENT.md.template",
+    "TROUBLESHOOT.md.template",
     "engine/presets/defaults-all.tfvars",
     "engine/presets/destroy.tfvars",
     "engine/main.tf",

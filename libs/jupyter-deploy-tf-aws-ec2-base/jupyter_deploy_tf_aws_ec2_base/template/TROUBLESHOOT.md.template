@@ -27,15 +27,7 @@ To resolve:
 
 - Pick a smaller `instance_type`, or free EIPs by destroying stale deployments
   (`jd down --path <project-dir>`), then re-run `jd config` and `jd up`.
-- Or request a higher limit (replace the quota code, value, and region):
+- Or request a higher limit. For the EC2 vCPU quota, the service code is `ec2`
+  and the quota code is `L-1216C47A`.
 
-  ```bash
-  aws service-quotas request-service-quota-increase \
-    --service-code ec2 --quota-code L-1216C47A \
-    --desired-value <value> --region <region>
-  ```
-
-  Check the current value with `get-service-quota` and track the request with
-  `list-requested-service-quota-change-history-by-quota` (same `--service-code`
-  and `--quota-code`). Increases may require AWS support review and are not
-  instantaneous. The AWS Service Quotas console offers the same actions.
+{{ request-quota-increase-instructions }}

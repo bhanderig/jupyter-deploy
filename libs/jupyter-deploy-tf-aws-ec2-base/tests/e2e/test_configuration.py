@@ -108,18 +108,32 @@ def test_gitignore_generated_after_init(e2e_deployment: EndToEndDeployment) -> N
     ]
 )
 def test_troubleshoot_md_exists_after_init(e2e_deployment: EndToEndDeployment) -> None:
-    """Test that TROUBLESHOOT.md exists after jd init.
+    """Test that TROUBLESHOOT.md is generated after jd init.
 
-    This test validates that TROUBLESHOOT.md is copied from the template.
+    This test validates that:
+    1. TROUBLESHOOT.md is created from its template
+    2. TROUBLESHOOT.md.template is removed after generation
+    3. All snippet placeholders are substituted
     """
     with undeployed_project(e2e_deployment.suite_config) as (project_path, cli):
         # Check that TROUBLESHOOT.md exists
         troubleshoot_path = project_path / "TROUBLESHOOT.md"
         assert troubleshoot_path.exists(), f"TROUBLESHOOT.md should exist after init: {troubleshoot_path}"
 
+        # Check that TROUBLESHOOT.md.template was removed
+        troubleshoot_template_path = project_path / "TROUBLESHOOT.md.template"
+        assert not troubleshoot_template_path.exists(), (
+            f"TROUBLESHOOT.md.template should be removed after init: {troubleshoot_template_path}"
+        )
+
         # Read and verify basic content
         troubleshoot_content = troubleshoot_path.read_text()
         assert "# Troubleshooting Guide" in troubleshoot_content, "Should have main heading"
+
+        # Verify the shared snippet was substituted and no placeholders remain
+        assert "request-service-quota-increase" in troubleshoot_content, "Should document quota increase"
+        assert "{{" not in troubleshoot_content, "Should not contain template placeholders"
+        assert "}}" not in troubleshoot_content, "Should not contain template placeholders"
 
 
 @pytest.mark.cli

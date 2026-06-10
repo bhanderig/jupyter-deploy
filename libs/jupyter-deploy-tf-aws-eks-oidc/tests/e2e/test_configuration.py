@@ -94,6 +94,34 @@ def test_agent_md_generated_after_init(e2e_deployment: EndToEndDeployment) -> No
         "JD_E2E_VAR_OAUTH_APP_CLIENT_SECRET",
     ]
 )
+def test_troubleshoot_md_generated_after_init(e2e_deployment: EndToEndDeployment) -> None:
+    """Test that TROUBLESHOOT.md is generated after jd init with all snippets substituted."""
+    with undeployed_project(e2e_deployment.suite_config) as (project_path, cli):
+        troubleshoot_path = project_path / "TROUBLESHOOT.md"
+        assert troubleshoot_path.exists(), f"TROUBLESHOOT.md should exist after init: {troubleshoot_path}"
+
+        troubleshoot_template_path = project_path / "TROUBLESHOOT.md.template"
+        assert not troubleshoot_template_path.exists(), "TROUBLESHOOT.md.template should be removed after init"
+
+        troubleshoot_content = troubleshoot_path.read_text()
+
+        assert "# Troubleshooting Guide" in troubleshoot_content, "Should have main heading"
+        assert "request-service-quota-increase" in troubleshoot_content, "Should document quota increase"
+        assert "{{ " not in troubleshoot_content, "Should not contain template placeholders"
+        assert " }}" not in troubleshoot_content, "Should not contain template placeholders"
+
+
+@pytest.mark.cli
+@skip_if_testvars_not_set(
+    [
+        "JD_E2E_VAR_DOMAIN",
+        "JD_E2E_VAR_EMAIL",
+        "JD_E2E_VAR_OAUTH_APP_CLIENT_ID",
+        "JD_E2E_VAR_OAUTH_ALLOWED_TEAMS",
+        "JD_E2E_VAR_SUBDOMAIN",
+        "JD_E2E_VAR_OAUTH_APP_CLIENT_SECRET",
+    ]
+)
 def test_store_config_written_after_config(e2e_deployment: EndToEndDeployment) -> None:
     """Test that .jd/store.yaml is created after jd config with correct store type."""
     with undeployed_project(e2e_deployment.suite_config) as (project_path, cli):

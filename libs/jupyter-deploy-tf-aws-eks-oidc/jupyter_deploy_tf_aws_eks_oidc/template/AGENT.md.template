@@ -15,6 +15,9 @@ The template deploys:
 - Helm releases: traefik-crds, jupyter-k8s operator, aws-traefik-dex (OIDC routing)
 - Dex as an OIDC identity provider on the cluster for kubectl authentication
 
+Unlike the single-host EC2 template, this is a multi-app deployment: each user gets their own
+workspace (a "server"), addressed by `--name` and `--scope` (the Kubernetes namespace).
+
 ## Usage
 {{ jupyter-deploy-cli-general-instructions }}
 
@@ -29,6 +32,48 @@ The template deploys:
 {{ set-variables-with-file-instructions }}
 
 {{ read-variables-with-cmd-instructions }}
+
+### Manage access with a GitHub organization and teams
+
+Access to workspaces is controlled by GitHub team membership, configured through template
+variables (this template does not use the `jd users`/`jd teams` commands).
+
+- `oauth_allowed_teams` — list of GitHub teams allowed to sign in, each in `org:team` format
+  (e.g. `my-org:data-science`). Members of these teams can authenticate via the browser.
+- `workspace_rbac_namespaces` — Kubernetes namespaces where those teams are granted
+  permissions to create and manage workspaces. Each namespace gets a Role and RoleBinding.
+
+```bash
+# allow two GitHub teams (pass each entry as a separate flag)
+jd config --oauth-allowed-teams my-org:data-science --oauth-allowed-teams my-org:ml-platform
+
+# grant those teams workspace permissions in specific namespaces
+jd config --workspace-rbac-namespaces default --workspace-rbac-namespaces research
+
+# apply the change
+jd up
+```
+
+The OAuth app itself must be registered with the GitHub organization that owns these teams.
+When creating the OAuth app, log in as a member of the organization and set the
+`Authorization callback URL` to `https://<subdomain>.<domain>/dex/callback`. Organization
+owners may need to approve the OAuth app for it to access team membership; see GitHub's
+[third-party access settings](https://docs.github.com/en/organizations/managing-oauth-access-to-your-organizations-data).
+
+### Open the getting-started page or a workspace
+{{ multi-server-open-instructions }}
+
+### Manage user workspaces (servers)
+{{ jk8s-workspaces-management-instructions }}
+
+### Check the deployment health
+{{ health-check-instructions }}
+
+### Manage the cluster
+{{ eks-cluster-management-instruction }}
+
+### Manage the platform components
+{{ kubernetes-component-management-instructions }}
 
 ### View the full terraform logs
 
@@ -84,8 +129,6 @@ The web UI is deployed as part of the `jupyter-k8s-aws-oidc` Helm chart (workspa
 It provides workspace management (create, start, stop, delete) and a kubectl access page with cluster setup instructions.
 The web-app Deployment and its session-rotator CronJob run in the `workspace_router_namespace`.
 
-
-
 ### Router waiter script
 
 `waiter.tf` runs `local-await-router.sh.tftpl` as a `local-exec` provisioner after Helm releases are deployed.
@@ -99,18 +142,30 @@ It handles the DNS race condition on fresh deploys because:
 The script waits for all routing deployments (traefik, dex, oauth2-proxy, authmiddleware) to become ready,
 and triggers on domain, cluster name, or router chart version/revision changes.
 
+### Destroy-time workspace cleanup
+
+`workspaces.tf` defines `null_resource.destroy_workspaces`, a `when=destroy` provisioner that
+deletes all Workspaces and WorkspaceTemplates and waits for the operator to clear their
+finalizers BEFORE the node groups (and therefore the operator) are destroyed. This prevents a
+`jd down` deadlock. `main.tf` also defines `null_resource.wait_for_lb_cleanup` to order NLB
+teardown ahead of subnet/IGW deletion.
+
 All `local-exec` provisioners MUST set `interpreter = ["/bin/bash", "-c"]` — Terraform defaults to `/bin/sh` which breaks bash features (`[[`, `set -o pipefail`).
 
 ## The deployed EKS cluster
 
 ### Accessing the cluster
 
-After deployment, configure kubectl:
+After deployment, configure kubectl with:
 ```
-aws eks update-kubeconfig --name CLUSTER_NAME --region REGION
+jd cluster login
 ```
 
+This wraps `aws eks update-kubeconfig`. The IAM role you use MUST be listed in `admin_role_names`
+(the cluster is created with `bootstrap_cluster_creator_admin_permissions = false`).
+
 ### Key namespaces
+Unless overridden by variables, the default namespaces are:
 - `jupyter-k8s-system` — jupyter-k8s operator
 - `jupyter-k8s-router` — traefik + dex + oauth2-proxy + authmiddleware (OIDC routing)
 - `jupyter-k8s-shared` - access strategy and default template
@@ -120,5 +175,10 @@ aws eks update-kubeconfig --name CLUSTER_NAME --region REGION
 - `kubectl get pods -n jupyter-k8s-system` — operator pods
 - `kubectl get pods -n jupyter-k8s-router` — routing pods
 - `kubectl get workspaces -A` — list all workspaces
+
+### Troubleshooting
+
+Refer to `./TROUBLESHOOT.md` for specific situations (service quotas, DNS race conditions,
+`jd down` deadlocks, and cluster-access issues).
 
 {{ generated-by-footer }}

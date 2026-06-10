@@ -91,6 +91,7 @@ class InitHandler:
         # Generate documentation files
         docs_generator.generate_gitignore()
         docs_generator.generate_agent_md()
+        docs_generator.generate_troubleshoot_md()
 
     @staticmethod
     def restore(

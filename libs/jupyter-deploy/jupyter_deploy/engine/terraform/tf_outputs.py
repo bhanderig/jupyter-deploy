@@ -19,6 +19,7 @@ from jupyter_deploy.manifest import JupyterDeployManifest
 
 _BACKEND_INIT_ERROR = "Backend initialization required"
 _FAILED_TO_LOAD_STATE = "Failed to load state"
+_INVALID_CREDENTIALS = "error validating provider credentials"
 
 
 class TerraformOutputsHandler(EngineOutputsHandler):
@@ -42,11 +43,11 @@ class TerraformOutputsHandler(EngineOutputsHandler):
             return cmd_utils.run_cmd_and_capture_output(output_cmd, exec_dir=self.engine_dir_path)
         except subprocess.CalledProcessError as e:
             stderr = e.stderr or ""
-            if _FAILED_TO_LOAD_STATE in stderr:
+            if _FAILED_TO_LOAD_STATE in stderr or _INVALID_CREDENTIALS in stderr:
                 store_config = retrieve_store_config(self.project_path)
                 raise ProjectStoreReadError(
                     "Failed to load remote state.",
-                    hint="Verify that your credentials have access to the project store.",
+                    hint="Verify that your credentials are valid and have access to the project store.",
                     store_type=store_config.store_type if store_config else None,
                     store_id=store_config.store_id if store_config else None,
                 ) from e

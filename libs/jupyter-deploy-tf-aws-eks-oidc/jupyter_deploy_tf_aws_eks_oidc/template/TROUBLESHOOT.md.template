@@ -1,0 +1,152 @@
+# Troubleshooting Guide
+
+This guide details how to investigate and resolve common issues with the EKS OIDC deployment.
+
+A good first step for any issue is the aggregated health check:
+
+```bash
+jd health
+```
+
+It reports the cluster control plane, the load balancer target health, the platform
+components, and the end-to-end connection. Narrow the scope with `--cluster`,
+`--load-balancer`, `--components`, or `--connection`.
+
+## Service quota limits
+
+`jd up` can fail when an AWS service quota is exhausted. The most common cases for
+this template:
+
+- **EC2 vCPUs** — node group scaling fails with `VcpuLimitExceeded`. New accounts
+  start with a low On-Demand vCPU limit per region, and `0` for accelerated
+  families (GPU/Neuron), which blocks `workspaces` node groups that use GPU
+  instance types. Quotas are measured in vCPUs, not instance counts.
+- **Elastic IPs** — `AllocateAddress` fails with `AddressLimitExceeded`. The VPC
+  provisions one NAT gateway (and therefore one EIP) per availability zone — two by
+  default. The per-region limit defaults to 5.
+- **EKS clusters** — `CreateCluster` fails when the per-region cluster limit is
+  reached. Destroy stale deployments with `jd down` or request an increase.
+
+Relevant quota codes:
+
+| Service code | Quota code | Quota |
+|---|---|---|
+| `ec2` | `L-1216C47A` | Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances |
+| `ec2` | `L-DB2E81BA` | Running On-Demand G and VT instances (most GPU types) |
+| `ec2` | `L-417A185B` | Running On-Demand P instances |
+| `ec2` | `L-1945791B` / `L-2C3B7624` | Running On-Demand Inf / Trn instances (Neuron) |
+| `ec2` | `L-0263D0A3` | EC2-VPC Elastic IPs |
+| `eks` | `L-1194D53C` | Clusters per region |
+
+To resolve:
+
+- Pick smaller `instance_type` values in `node_groups`, reduce `desired_size`, or
+  free resources by destroying stale deployments (`jd down --path <project-dir>`),
+  then re-run `jd config` and `jd up`.
+- Or request a higher limit.
+
+{{ request-quota-increase-instructions }}
+
+## The URL does not resolve right after a fresh deploy
+
+On a fresh install, the domain does not resolve until the Network Load Balancer is
+provisioned and external-dns creates the Route 53 record (3–5 minutes). During that
+window, `oauth2-proxy` and `authmiddleware` can enter `CrashLoopBackOff` because they
+need the external domain for OIDC discovery and token validation.
+
+The template's `null_resource.wait_for_routing_ready` provisioner (see `engine/waiter.tf`)
+handles this automatically on `jd up`: it waits for the Route 53 record, flushes the
+CoreDNS negative cache, and waits for the routing deployments to become ready.
+
+If the URL still does not resolve after `jd up` completes:
+
+```bash
+# confirm the connection layer
+jd health --connection
+
+# inspect the routing components
+jd component status --name traefik
+jd component status --name oauth2-proxy
+jd component status --name authmiddleware
+
+# tail logs of a crashing component
+jd component logs --name oauth2-proxy
+
+# force a fresh pull of DNS by restarting the affected deployment
+jd component restart --name oauth2-proxy
+```
+
+If the load balancer was deleted out-of-band, the Service may cache a dead hostname.
+Re-trigger reconciliation by annotating the Traefik Service (after `jd cluster login`):
+
+```bash
+kubectl annotate svc traefik -n jupyter-k8s-router jupyter-deploy/reconcile=$(date +%s) --overwrite
+```
+
+## `jd down` hangs or fails to destroy
+
+Destroying the cluster can deadlock if workspace custom resources still carry
+operator finalizers when the operator's node group is torn down. The template ships
+`null_resource.destroy_workspaces` (see `engine/workspaces.tf`) which deletes all
+Workspaces and WorkspaceTemplates and waits for the operator to clear their finalizers
+*before* the node groups are destroyed. This runs automatically on `jd down`.
+
+If a destroy was interrupted and a later `jd down` still hangs, the operator may already
+be gone (its node group destroyed) and finalizers can no longer be cleared automatically.
+Recover manually after `jd cluster login` (or `aws eks update-kubeconfig` if the
+Terraform outputs are already gone):
+
+```bash
+# remove the orphaned operator webhooks (they block kubectl delete with "no endpoints")
+kubectl delete validatingwebhookconfiguration jupyter-k8s-validating-webhook-configuration --ignore-not-found
+kubectl delete mutatingwebhookconfiguration jupyter-k8s-mutating-webhook-configuration --ignore-not-found
+
+# strip finalizers from any stuck resources, then re-run jd down
+kubectl patch workspace <name> -n <namespace> --type=merge -p '{"metadata":{"finalizers":[]}}'
+kubectl patch workspacetemplate <name> -n <namespace> --type=merge -p '{"metadata":{"finalizers":[]}}'
+```
+
+Lingering Network Load Balancers (created by the Traefik Service) can also block VPC,
+subnet, or internet-gateway deletion. The template's `null_resource.wait_for_lb_cleanup`
+handles ordering, but if a destroy stalls for 15+ minutes on subnet deletion, look for a
+leftover NLB tagged with the cluster name and delete it with
+`aws elbv2 delete-load-balancer`.
+
+## `kubectl` / `jd cluster login` returns Forbidden
+
+The cluster is created with `bootstrap_cluster_creator_admin_permissions = false`, so
+only IAM roles listed in `admin_role_names` receive cluster admin access. A `check`
+block validates at plan time that the caller's role is included.
+
+If you assume a different IAM role than the one used to deploy, add its name to
+`admin_role_names`, then re-run `jd config` and `jd up` (pass each role name as a
+separate flag):
+
+```bash
+jd config --admin-role-names Admin --admin-role-names MyOtherRole
+jd up
+```
+
+Workspace-level access is granted by the `github-rbac` chart to the GitHub teams in
+`oauth_allowed_teams`, scoped to the namespaces in `workspace_rbac_namespaces`. If a
+user gets `Forbidden` creating a workspace, confirm their team is in `oauth_allowed_teams`
+(in `org:team` format) and that the target namespace is in `workspace_rbac_namespaces`.
+
+## A workspace does not start
+
+```bash
+# check the workspace status
+jd server status --name <workspace-name> --scope <namespace>
+
+# inspect details (events, conditions, scheduling)
+jd server show --name <workspace-name> --scope <namespace>
+
+# tail the workspace logs
+jd server logs --name <workspace-name> --scope <namespace>
+```
+
+A workspace stuck in `Starting` is often waiting on a node. GPU workspaces require a
+`workspaces` node group with GPU capacity and sufficient vCPU quota (see above). If the
+node group `desired_size` is `0`, scale it up in `node_groups` and run `jd up`.
+
+{{ generated-by-footer }}

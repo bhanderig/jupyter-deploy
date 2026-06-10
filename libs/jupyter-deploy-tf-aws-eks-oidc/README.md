@@ -54,6 +54,8 @@ Make sure it matches the `<domain>` and `<subdomain>` exactly.
 
 In the next page, write down and save your app client ID. Generate an app client secret, and write it down as well.
 
+The `oauth_allowed_teams` variable grants access to GitHub teams, in `org:team` format. To grant an organization's teams access, create the OAuth app under that organization (`Settings → Developer settings → OAuth Apps`) so its owners can manage the app and the app can read team membership. See [Prerequisites](https://jupyter-deploy.readthedocs.io/en/latest/templates/aws-eks-oidc-template/prerequisites.html) for details.
+
 Refer to GitHub [documentation](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app) for more details.
 
 ## Usage
@@ -135,7 +137,10 @@ jd cluster login
 ### Manage components
 ```bash
 # health dashboard for all platform components
-jd component health
+jd health --components
+
+# list the platform components
+jd component list
 
 # view component logs
 jd component logs --name dex

@@ -39,36 +39,43 @@ class DocsGenerator:
 
     def generate_agent_md(self) -> None:
         """Generate AGENT.md file from template with CLI snippet substitutions."""
-        # Template file in project directory (copied from source)
-        template_path = self.project_path / "AGENT.md.template"
+        self._generate_from_template(template_filename="AGENT.md.template", snippet_dir_name="agent")
 
-        # If template doesn't exist, skip generation
+    def generate_troubleshoot_md(self) -> None:
+        """Generate TROUBLESHOOT.md file from template with snippet substitutions."""
+        self._generate_from_template(template_filename="TROUBLESHOOT.md.template", snippet_dir_name="troubleshoot")
+
+    def _generate_from_template(self, template_filename: str, snippet_dir_name: str) -> None:
+        """Render a project doc by substituting snippets into its `.template` file.
+
+        Reads `<template_filename>` from the project directory, replaces every
+        `{{ placeholder }}` with the matching snippet from
+        `init_static/<snippet_dir_name>/<placeholder>.md`, writes the result to the
+        file without the `.template` suffix, then removes the template.
+
+        No-op if the template file does not exist.
+        """
+        template_path = self.project_path / template_filename
+
         if not template_path.exists():
             return
 
-        # Read template
         template_content = template_path.read_text()
+        snippet_dir = self.INIT_STATIC_DIR / snippet_dir_name
+        output_content = self._substitute_snippets(template_content, snippet_dir)
 
-        # Apply substitutions
-        output_content = self._substitute_agent_template_vars(template_content)
-
-        # Write to project
-        output_path = self.project_path / "AGENT.md"
+        output_path = self.project_path / template_filename.removesuffix(".template")
         output_path.write_text(output_content)
 
         # Remove the template file after generation
         template_path.unlink()
 
-    def _substitute_agent_template_vars(self, template_content: str) -> str:
-        """Replace template variables in AGENT.md template.
+    @staticmethod
+    def _substitute_snippets(template_content: str, snippet_dir: Path) -> str:
+        """Replace `{{ placeholder }}` tokens with snippets loaded from `snippet_dir`.
 
-        Args:
-            template_content: The template content with placeholders
-
-        Returns:
-            Content with all placeholders replaced
+        Placeholders without a matching `<placeholder>.md` file are left untouched.
         """
-        agent_dir = self.INIT_STATIC_DIR / "agent"
         result = template_content
 
         # Find all placeholders in the template
@@ -76,7 +83,7 @@ class DocsGenerator:
 
         # Load and substitute each snippet
         for placeholder in placeholders:
-            snippet_path = agent_dir / f"{placeholder}.md"
+            snippet_path = snippet_dir / f"{placeholder}.md"
             if snippet_path.exists():
                 snippet_content = snippet_path.read_text().rstrip()
                 result = result.replace(f"{{{{ {placeholder} }}}}", snippet_content)

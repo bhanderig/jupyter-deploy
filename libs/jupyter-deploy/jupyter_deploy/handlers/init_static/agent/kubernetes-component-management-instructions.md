@@ -1,0 +1,43 @@
+Components are the platform-level Kubernetes resources supporting your apps (e.g. router,
+identity provider, controllers). Each one is backed by a Kubernetes **Deployment** (a
+long-running workload) or a **CronJob** (a scheduled job). You address a component by
+`--name`; `jd component list` reports each one's name and type.
+
+```bash
+# list the components declared by this template (with their Deployment/CronJob type)
+jd component list
+
+# check the status of a specific component
+jd component status --name COMPONENT-NAME
+```
+
+`jd component show` reads the full Kubernetes resource and prints it as JSON — the
+equivalent of `kubectl describe`/`kubectl get -o json` for that Deployment or CronJob.
+Use it to inspect the spec, replica counts, conditions, and events.
+
+```bash
+jd component show --name COMPONENT-NAME
+```
+
+`jd component logs` fetches the logs of the component's pod. Anything after `--` is passed
+straight to `kubectl logs`, so you can use its flags — e.g. `--tail N` for the last N
+lines, `--since 10m`, `-f` to follow, `--previous` for a crashed container's prior run,
+or `-c CONTAINER` to select a container.
+
+```bash
+# last 100 lines
+jd component logs --name COMPONENT-NAME -- --tail 100
+
+# follow the logs of the previous (crashed) container instance
+jd component logs --name COMPONENT-NAME -- --previous -f
+```
+
+The remaining verbs depend on the component type:
+
+```bash
+# restart a Deployment-backed component (rolling restart; not valid for a CronJob)
+jd component restart --name COMPONENT-NAME
+
+# trigger a one-off Job from a CronJob-backed component (not valid for a Deployment)
+jd component trigger --name COMPONENT-NAME
+```

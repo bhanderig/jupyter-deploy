@@ -55,7 +55,7 @@ jd cluster login
 jd open
 
 # open a specific workspace
-jd open --name my-workspace --scope default
+jd open --server-name my-workspace --scope default
 ```
 
 ## Manage user workspaces
@@ -93,7 +93,7 @@ jd server connect --name my-workspace --scope default
 
 ```bash
 # health dashboard for all components
-jd component health
+jd health --components
 
 # list components
 jd component list

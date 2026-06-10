@@ -99,6 +99,34 @@ class TestRunOutputCmd(unittest.TestCase):
         self.assertIsNone(ctx.exception.store_type)
         self.assertIsNone(ctx.exception.store_id)
 
+    @patch("jupyter_deploy.engine.terraform.tf_outputs.retrieve_store_config")
+    @patch("jupyter_deploy.engine.terraform.tf_outputs.cmd_utils.run_cmd_and_capture_output")
+    def test_raises_project_store_read_error_on_invalid_credentials(
+        self, mock_run_cmd: Mock, mock_retrieve_store_config: Mock
+    ) -> None:
+        creds_error = subprocess.CalledProcessError(1, "terraform output -json")
+        creds_error.stderr = (
+            "Error: error configuring S3 Backend: error validating provider credentials: "
+            "error calling sts:GetCallerIdentity: ExpiredToken: The security token included "
+            "in the request is expired"
+        )
+        mock_run_cmd.side_effect = creds_error
+
+        mock_store_config = Mock()
+        mock_store_config.store_type = "s3"
+        mock_store_config.store_id = "my-bucket"
+        mock_retrieve_store_config.return_value = mock_store_config
+
+        handler = TerraformOutputsHandler(Path("/mock/project"), Mock())
+        with self.assertRaises(ProjectStoreReadError) as ctx:
+            handler._run_output_cmd()
+
+        self.assertIn("Failed to load remote state", str(ctx.exception))
+        self.assertIn("credentials", ctx.exception.hint or "")
+        self.assertEqual(ctx.exception.store_type, "s3")
+        self.assertEqual(ctx.exception.store_id, "my-bucket")
+        mock_run_cmd.assert_called_once()
+
     @patch("jupyter_deploy.engine.terraform.tf_outputs.cmd_utils.run_cmd_and_capture_output")
     def test_does_not_retry_on_unrelated_error(self, mock_run_cmd: Mock) -> None:
         unrelated_error = subprocess.CalledProcessError(1, "terraform output -json")

@@ -64,13 +64,13 @@ Refer to GitHub [documentation](https://docs.github.com/en/apps/oauth-apps/build
 Recommended: create or activate a Python virtual environment.
 
 ```bash
-uv add jupyter-deploy[aws,k8s] jupyter-deploy-tf-aws-eks-oidc
+uv add "jupyter-deploy[aws,k8s]" jupyter-deploy-tf-aws-eks-oidc
 ```
 
 Or with pip:
 
 ```bash
-pip install jupyter-deploy[aws,k8s] jupyter-deploy-tf-aws-eks-oidc
+pip install "jupyter-deploy[aws,k8s]" jupyter-deploy-tf-aws-eks-oidc
 ```
 
 ### Project setup

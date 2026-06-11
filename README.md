@@ -32,7 +32,7 @@ uv venv
 source .venv/bin/activate
 
 # install the CLI and the AWS Base Template
-uv add jupyter-deploy[aws]
+uv add "jupyter-deploy[aws]"
 uv add jupyter-deploy-tf-aws-ec2-base
 ```
 

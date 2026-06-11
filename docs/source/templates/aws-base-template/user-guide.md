@@ -6,13 +6,13 @@ This terraform project is meant to be used with the [jupyter-deploy](https://git
 Recommended: create or activate a Python virtual environment.
 
 ```bash
-uv add jupyter-deploy[aws] jupyter-deploy-tf-aws-ec2-base
+uv add "jupyter-deploy[aws]" jupyter-deploy-tf-aws-ec2-base
 ```
 
 Or with pip:
 
 ```bash
-pip install jupyter-deploy[aws] jupyter-deploy-tf-aws-ec2-base
+pip install "jupyter-deploy[aws]" jupyter-deploy-tf-aws-ec2-base
 ```
 
 ## Project setup

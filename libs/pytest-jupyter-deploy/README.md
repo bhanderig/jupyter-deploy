@@ -14,7 +14,7 @@ pip install pytest-jupyter-deploy
 
 For UI testing with Playwright:
 ```bash
-pip install pytest-jupyter-deploy[ui]
+pip install "pytest-jupyter-deploy[ui]"
 playwright install firefox
 ```
 

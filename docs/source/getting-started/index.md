@@ -18,13 +18,13 @@ uv venv
 source .venv/bin/activate
 
 # install jupyter-deploy and the base template
-uv add jupyter-deploy[aws]
+uv add "jupyter-deploy[aws]"
 uv add jupyter-deploy-tf-aws-ec2-base
 ```
 
 Or with `pip`:
 ```bash
-pip install jupyter-deploy[aws]
+pip install "jupyter-deploy[aws]"
 pip install jupyter-deploy-tf-aws-ec2-base
 ```
 

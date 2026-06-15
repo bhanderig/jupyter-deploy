@@ -12,10 +12,8 @@ from jupyter_deploy.engine.supervised_execution import NullDisplay
 from jupyter_deploy.engine.vardefs import TemplateVariableDefinition
 from jupyter_deploy.exceptions import InvalidVariablesDotYamlError
 from jupyter_deploy.variables_config import (
-    VARIABLES_CONFIG_V1_COMMENTS,
-    VARIABLES_CONFIG_V1_KEYS_ORDER,
     JupyterDeployVariablesConfig,
-    JupyterDeployVariablesConfigV1,
+    JupyterDeployVariablesConfigV2,
 )
 
 
@@ -119,7 +117,7 @@ class TestVariablesConfigProperty(unittest.TestCase):
         result = handler.variables_config
 
         # Verify that a reset config was returned
-        self.assertIsInstance(result, JupyterDeployVariablesConfigV1)
+        self.assertIsInstance(result, JupyterDeployVariablesConfigV2)
         mock_retrieve.assert_called_once()
 
     @patch("jupyter_deploy.handlers.base_project_handler.retrieve_variables_config")
@@ -138,7 +136,7 @@ class TestVariablesConfigProperty(unittest.TestCase):
         result = handler.variables_config
 
         # Verify that a reset config was returned
-        self.assertIsInstance(result, JupyterDeployVariablesConfigV1)
+        self.assertIsInstance(result, JupyterDeployVariablesConfigV2)
         mock_retrieve.assert_called_once()
 
     @patch("jupyter_deploy.handlers.base_project_handler.retrieve_variables_config")
@@ -157,7 +155,7 @@ class TestVariablesConfigProperty(unittest.TestCase):
         result = handler.variables_config
 
         # Verify that a reset config was returned
-        self.assertIsInstance(result, JupyterDeployVariablesConfigV1)
+        self.assertIsInstance(result, JupyterDeployVariablesConfigV2)
         mock_retrieve.assert_called_once()
 
 
@@ -395,8 +393,8 @@ class TestGetVariableNamesAssignedInConfig(unittest.TestCase):
 
 
 class TestSyncProjectVariablesConfig(unittest.TestCase):
-    @patch("jupyter_deploy.fs_utils.write_yaml_file_with_comments")
-    def test_handles_required_sensitive_overrides_and_defaults(self, mock_write: Mock) -> None:
+    @patch.object(DummyVariablesHandler, "_write_variables_config")
+    def test_handles_required_sensitive_and_overrides(self, mock_write: Mock) -> None:
         # Setup
         project_path = Path("/mock/project")
         manifest = Mock()
@@ -404,40 +402,30 @@ class TestSyncProjectVariablesConfig(unittest.TestCase):
             project_path=project_path, project_manifest=manifest, display_manager=NullDisplay()
         )
 
-        # Create a mock variables_config
-        mock_config = Mock(spec=JupyterDeployVariablesConfig)
-        mock_config.required = {"var1": "value1"}
-        mock_config.required_sensitive = {"var2": "value2"}
-        mock_config.overrides = {}
-        mock_config.defaults = {"var3": "value3", "var4": "value4", "var5": "value5"}
-
-        # Create expected model_dump output
-        expected_model_dump = {
-            "schema_version": 1,
-            "required": {"var1": "new1"},
-            "required_sensitive": {"var2": "new2"},
-            "overrides": {"var3": "new3", "var5": "new5"},
-            "defaults": {"var3": "value3", "var4": "value4", "var5": "value5"},
-        }
-
-        # Create mock for new config
-        mock_new_config = Mock()
-        mock_new_config.model_dump.return_value = expected_model_dump
-
-        # Patch the variables_config property to return our mock
+        # Create a mock variables_config (V2 — no defaults field)
+        mock_config = JupyterDeployVariablesConfigV2(
+            schema_version=2,
+            required={"var1": "value1"},
+            required_sensitive={"var2": "value2"},
+            overrides={},
+        )
         handler._variables_config = mock_config
 
-        # Patch write_yaml_file_with_comments and JupyterDeployVariablesConfigV1
         # Execute
         updated_values = {"var1": "new1", "var2": "new2", "var3": "new3", "var5": "new5"}
         handler.sync_project_variables_config(updated_values)
 
-        # Verify that the config was updated with the new values
-        model_dump = mock_write.call_args[0][1]
-        self.assertEqual(model_dump, expected_model_dump)
+        # Verify that _write_variables_config was called with updated V2 config
+        mock_write.assert_called_once()
+        written_config: JupyterDeployVariablesConfigV2 = mock_write.call_args[0][0]
+        self.assertEqual(written_config.schema_version, 2)
+        self.assertEqual(written_config.required["var1"], "new1")
+        self.assertEqual(written_config.required_sensitive["var2"], "new2")
+        self.assertEqual(written_config.overrides["var3"], "new3")
+        self.assertEqual(written_config.overrides["var5"], "new5")
 
-    @patch("jupyter_deploy.fs_utils.write_yaml_file_with_comments")
-    def test_calls_write_with_comments_and_key_order(self, mock_write: Mock) -> None:
+    @patch.object(DummyVariablesHandler, "_write_variables_config")
+    def test_calls_write_once(self, mock_write: Mock) -> None:
         # Setup
         project_path = Path("/mock/project")
         manifest = Mock()
@@ -445,36 +433,23 @@ class TestSyncProjectVariablesConfig(unittest.TestCase):
             project_path=project_path, project_manifest=manifest, display_manager=NullDisplay()
         )
 
-        # Create a mock variables_config
-        mock_config = Mock(spec=JupyterDeployVariablesConfig)
-        mock_config.required = {}
-        mock_config.required_sensitive = {}
-        mock_config.overrides = {}
-        mock_config.defaults = {"var1": "value1"}
-
-        # Mock JupyterDeployVariablesConfigV1 to return a mock with model_dump method
-        mock_new_config = Mock()
-        mock_new_config.model_dump.return_value = {
-            "schema_version": 1,
-            "required": {},
-            "required_sensitive": {},
-            "overrides": {},
-            "defaults": {"var1": "value1"},
-        }
-
-        # Patch the variables_config property to return our mock
+        mock_config = JupyterDeployVariablesConfigV2(
+            schema_version=2,
+            required={},
+            required_sensitive={},
+            overrides={},
+        )
         handler._variables_config = mock_config
 
         # Execute
         handler.sync_project_variables_config({"var1": "value1"})
 
-        # Verify that write_yaml_file_with_comments was called with the correct arguments
+        # Verify write was called once with a V2 config
         mock_write.assert_called_once()
-        self.assertEqual(mock_write.call_args[0][0], project_path / constants.VARIABLES_FILENAME)
-        self.assertEqual(mock_write.call_args[1]["key_order"], VARIABLES_CONFIG_V1_KEYS_ORDER)
-        self.assertEqual(mock_write.call_args[1]["comments"], VARIABLES_CONFIG_V1_COMMENTS)
+        written_config: JupyterDeployVariablesConfigV2 = mock_write.call_args[0][0]
+        self.assertEqual(written_config.schema_version, 2)
 
-    @patch("jupyter_deploy.fs_utils.write_yaml_file_with_comments")
+    @patch.object(DummyVariablesHandler, "_write_variables_config")
     def test_raises_when_write_method_raises(self, mock_write: Mock) -> None:
         # Setup
         project_path = Path("/mock/project")
@@ -483,27 +458,14 @@ class TestSyncProjectVariablesConfig(unittest.TestCase):
             project_path=project_path, project_manifest=manifest, display_manager=NullDisplay()
         )
 
-        # Create a mock variables_config
-        mock_config = Mock(spec=JupyterDeployVariablesConfig)
-        mock_config.required = {}
-        mock_config.required_sensitive = {}
-        mock_config.overrides = {}
-        mock_config.defaults = {"var1": "value1"}
-
-        # Mock JupyterDeployVariablesConfigV1 to return a mock with model_dump method
-        mock_new_config = Mock()
-        mock_new_config.model_dump.return_value = {
-            "schema_version": 1,
-            "required": {},
-            "required_sensitive": {},
-            "overrides": {},
-            "defaults": {"var1": "value1"},
-        }
-
-        # Patch the variables_config property to return our mock
+        mock_config = JupyterDeployVariablesConfigV2(
+            schema_version=2,
+            required={},
+            required_sensitive={},
+            overrides={},
+        )
         handler._variables_config = mock_config
 
-        # Make write_yaml_file_with_comments raise an exception
         mock_write.side_effect = OSError("Write error")
 
         # Execute and verify that the exception propagates
@@ -512,7 +474,7 @@ class TestSyncProjectVariablesConfig(unittest.TestCase):
 
 
 class TestResetRecordedVariables(unittest.TestCase):
-    @patch("jupyter_deploy.fs_utils.write_yaml_file_with_comments")
+    @patch.object(DummyVariablesHandler, "_write_variables_config")
     def test_calls_write_updating_required_and_overrides_only(self, mock_write: Mock) -> None:
         # Setup
         project_path = Path("/mock/project")
@@ -521,14 +483,12 @@ class TestResetRecordedVariables(unittest.TestCase):
             project_path=project_path, project_manifest=manifest, display_manager=NullDisplay()
         )
 
-        # Create a mock variables_config with some values
-        mock_config = Mock(spec=JupyterDeployVariablesConfig)
-        mock_config.required = {"var1": "value1", "var2": "value2"}
-        mock_config.required_sensitive = {"var3": "value3"}
-        mock_config.overrides = {"var4": "value4"}
-        mock_config.defaults = {"var6": "value6"}
-
-        # Patch the variables_config property to return our mock
+        mock_config = JupyterDeployVariablesConfigV2(
+            schema_version=2,
+            required={"var1": "value1", "var2": "value2"},
+            required_sensitive={"var3": "value3"},
+            overrides={"var4": "value4"},
+        )
         handler._variables_config = mock_config
 
         # Execute
@@ -536,23 +496,23 @@ class TestResetRecordedVariables(unittest.TestCase):
 
         # Verify
         mock_write.assert_called_once()
-        # Get the data that was passed to write_yaml_file_with_comments
-        written_data = mock_write.call_args[0][1]
+        written_config: JupyterDeployVariablesConfigV2 = mock_write.call_args[0][0]
 
-        # Check that all values are None
-        self.assertEqual(list(written_data["required"].keys()), list(mock_config.required.keys()))
-        for val in written_data["required"].values():
+        # Check that all required values are None
+        self.assertEqual(set(written_config.required.keys()), {"var1", "var2"})
+        for val in written_config.required.values():
             self.assertIsNone(val)
 
-        self.assertEqual(list(written_data["required_sensitive"].keys()), list(mock_config.required_sensitive.keys()))
-        for val in written_data["required_sensitive"].values():
+        # Check sensitive values are also None
+        self.assertEqual(set(written_config.required_sensitive.keys()), {"var3"})
+        for val in written_config.required_sensitive.values():
             self.assertIsNone(val)
 
         # Check that overrides is empty
-        self.assertEqual(written_data["overrides"], {})
+        self.assertEqual(written_config.overrides, {})
 
-    @patch("jupyter_deploy.fs_utils.write_yaml_file_with_comments")
-    def test_calls_write_with_comments_and_key_order(self, mock_write: Mock) -> None:
+    @patch.object(DummyVariablesHandler, "_write_variables_config")
+    def test_writes_v2_config(self, mock_write: Mock) -> None:
         # Setup
         project_path = Path("/mock/project")
         manifest = Mock()
@@ -560,26 +520,18 @@ class TestResetRecordedVariables(unittest.TestCase):
             project_path=project_path, project_manifest=manifest, display_manager=NullDisplay()
         )
 
-        # Create a mock variables_config
-        mock_config = Mock(spec=JupyterDeployVariablesConfig)
-        mock_config.required = {}
-        mock_config.required_sensitive = {}
-        mock_config.overrides = {}
-        mock_config.defaults = {}
-
-        # Patch the variables_config property to return our mock
+        mock_config = JupyterDeployVariablesConfigV2(schema_version=2, required={}, required_sensitive={}, overrides={})
         handler._variables_config = mock_config
 
         # Execute
         handler.reset_recorded_variables()
 
-        # Verify that write_yaml_file_with_comments was called with the correct arguments
+        # Verify a V2 config was written
         mock_write.assert_called_once()
-        self.assertEqual(mock_write.call_args[0][0], project_path / constants.VARIABLES_FILENAME)
-        self.assertEqual(mock_write.call_args[1]["key_order"], VARIABLES_CONFIG_V1_KEYS_ORDER)
-        self.assertEqual(mock_write.call_args[1]["comments"], VARIABLES_CONFIG_V1_COMMENTS)
+        written_config: JupyterDeployVariablesConfigV2 = mock_write.call_args[0][0]
+        self.assertEqual(written_config.schema_version, 2)
 
-    @patch("jupyter_deploy.fs_utils.write_yaml_file_with_comments")
+    @patch.object(DummyVariablesHandler, "_write_variables_config")
     def test_raises_when_write_method_raises(self, mock_write: Mock) -> None:
         # Setup
         project_path = Path("/mock/project")
@@ -588,26 +540,17 @@ class TestResetRecordedVariables(unittest.TestCase):
             project_path=project_path, project_manifest=manifest, display_manager=NullDisplay()
         )
 
-        # Create a mock variables_config
-        mock_config = Mock(spec=JupyterDeployVariablesConfig)
-        mock_config.required = {}
-        mock_config.required_sensitive = {}
-        mock_config.overrides = {}
-        mock_config.defaults = {}
-
-        # Patch the variables_config property to return our mock
+        mock_config = JupyterDeployVariablesConfigV2(schema_version=2, required={}, required_sensitive={}, overrides={})
         handler._variables_config = mock_config
 
-        # Make write_yaml_file_with_comments raise an exception
         mock_write.side_effect = OSError("Write error")
 
-        # Execute and verify that the exception propagates
         with self.assertRaises(OSError):
             handler.reset_recorded_variables()
 
 
 class TestMaskSecrets(unittest.TestCase):
-    @patch("jupyter_deploy.fs_utils.write_yaml_file_with_comments")
+    @patch.object(DummyVariablesHandler, "_write_variables_config")
     def test_replaces_all_sensitive_values_with_mask(self, mock_write: Mock) -> None:
         project_path = Path("/mock/project")
         manifest = Mock()
@@ -615,28 +558,28 @@ class TestMaskSecrets(unittest.TestCase):
             project_path=project_path, project_manifest=manifest, display_manager=NullDisplay()
         )
 
-        mock_config = Mock(spec=JupyterDeployVariablesConfig)
-        mock_config.required = {"var1": "value1"}
-        mock_config.required_sensitive = {"secret1": "real-secret", "secret2": "another-secret"}
-        mock_config.overrides = {"var3": "value3-override"}
-        mock_config.defaults = {"var3": "value3-default"}
+        mock_config = JupyterDeployVariablesConfigV2(
+            schema_version=2,
+            required={"var1": "value1"},
+            required_sensitive={"secret1": "real-secret", "secret2": "another-secret"},
+            overrides={"var3": "value3-override"},
+        )
         handler._variables_config = mock_config
 
         handler.mask_secrets()
 
         mock_write.assert_called_once()
-        written_data = mock_write.call_args[0][1]
+        written_config: JupyterDeployVariablesConfigV2 = mock_write.call_args[0][0]
 
         # Sensitive values should be masked
         self.assertEqual(
-            written_data["required_sensitive"], {"secret1": MASKED_SECRET_VALUE, "secret2": MASKED_SECRET_VALUE}
+            written_config.required_sensitive, {"secret1": MASKED_SECRET_VALUE, "secret2": MASKED_SECRET_VALUE}
         )
         # Non-sensitive values should be preserved
-        self.assertEqual(written_data["required"], {"var1": "value1"})
-        self.assertEqual(written_data["overrides"], {"var3": "value3-override"})
-        self.assertEqual(written_data["defaults"], {"var3": "value3-default"})
+        self.assertEqual(written_config.required, {"var1": "value1"})
+        self.assertEqual(written_config.overrides, {"var3": "value3-override"})
 
-    @patch("jupyter_deploy.fs_utils.write_yaml_file_with_comments")
+    @patch.object(DummyVariablesHandler, "_write_variables_config")
     def test_masks_none_values_too(self, mock_write: Mock) -> None:
         project_path = Path("/mock/project")
         manifest = Mock()
@@ -644,22 +587,23 @@ class TestMaskSecrets(unittest.TestCase):
             project_path=project_path, project_manifest=manifest, display_manager=NullDisplay()
         )
 
-        mock_config = Mock(spec=JupyterDeployVariablesConfig)
-        mock_config.required = {}
-        mock_config.required_sensitive = {"secret1": None, "secret2": "value"}
-        mock_config.overrides = {}
-        mock_config.defaults = {}
+        mock_config = JupyterDeployVariablesConfigV2(
+            schema_version=2,
+            required={},
+            required_sensitive={"secret1": None, "secret2": "value"},
+            overrides={},
+        )
         handler._variables_config = mock_config
 
         handler.mask_secrets()
 
         mock_write.assert_called_once()
-        written_data = mock_write.call_args[0][1]
+        written_config: JupyterDeployVariablesConfigV2 = mock_write.call_args[0][0]
         self.assertEqual(
-            written_data["required_sensitive"], {"secret1": MASKED_SECRET_VALUE, "secret2": MASKED_SECRET_VALUE}
+            written_config.required_sensitive, {"secret1": MASKED_SECRET_VALUE, "secret2": MASKED_SECRET_VALUE}
         )
 
-    @patch("jupyter_deploy.fs_utils.write_yaml_file_with_comments")
+    @patch.object(DummyVariablesHandler, "_write_variables_config")
     def test_updates_cached_config(self, mock_write: Mock) -> None:
         project_path = Path("/mock/project")
         manifest = Mock()
@@ -667,12 +611,19 @@ class TestMaskSecrets(unittest.TestCase):
             project_path=project_path, project_manifest=manifest, display_manager=NullDisplay()
         )
 
-        mock_config = Mock(spec=JupyterDeployVariablesConfig)
-        mock_config.required = {}
-        mock_config.required_sensitive = {"secret1": "real-value"}
-        mock_config.overrides = {}
-        mock_config.defaults = {}
+        mock_config = JupyterDeployVariablesConfigV2(
+            schema_version=2,
+            required={},
+            required_sensitive={"secret1": "real-value"},
+            overrides={},
+        )
         handler._variables_config = mock_config
+
+        # Make the mock actually update the cache like the real method does
+        def fake_write(config: JupyterDeployVariablesConfigV2) -> None:
+            handler._variables_config = config
+
+        mock_write.side_effect = fake_write
 
         handler.mask_secrets()
 
@@ -681,125 +632,85 @@ class TestMaskSecrets(unittest.TestCase):
         assert handler._variables_config is not None
         self.assertEqual(handler._variables_config.required_sensitive["secret1"], MASKED_SECRET_VALUE)
 
-    @patch("jupyter_deploy.fs_utils.write_yaml_file_with_comments")
-    def test_writes_with_comments_and_key_order(self, mock_write: Mock) -> None:
+    @patch.object(DummyVariablesHandler, "_write_variables_config")
+    def test_writes_v2_config(self, mock_write: Mock) -> None:
         project_path = Path("/mock/project")
         manifest = Mock()
         handler = DummyVariablesHandler(
             project_path=project_path, project_manifest=manifest, display_manager=NullDisplay()
         )
 
-        mock_config = Mock(spec=JupyterDeployVariablesConfig)
-        mock_config.required = {}
-        mock_config.required_sensitive = {}
-        mock_config.overrides = {}
-        mock_config.defaults = {}
+        mock_config = JupyterDeployVariablesConfigV2(schema_version=2, required={}, required_sensitive={}, overrides={})
         handler._variables_config = mock_config
 
         handler.mask_secrets()
 
         mock_write.assert_called_once()
-        self.assertEqual(mock_write.call_args[0][0], project_path / constants.VARIABLES_FILENAME)
-        self.assertEqual(mock_write.call_args[1]["key_order"], VARIABLES_CONFIG_V1_KEYS_ORDER)
-        self.assertEqual(mock_write.call_args[1]["comments"], VARIABLES_CONFIG_V1_COMMENTS)
+        written_config: JupyterDeployVariablesConfigV2 = mock_write.call_args[0][0]
+        self.assertEqual(written_config.schema_version, 2)
 
 
 class TestResetRecordedSecrets(unittest.TestCase):
-    @patch("jupyter_deploy.fs_utils.write_yaml_file_with_comments")
+    @patch.object(DummyVariablesHandler, "_write_variables_config")
     def test_calls_write_updating_sensitives_only(self, mock_write: Mock) -> None:
-        # Setup
         project_path = Path("/mock/project")
         manifest = Mock()
         handler = DummyVariablesHandler(
             project_path=project_path, project_manifest=manifest, display_manager=NullDisplay()
         )
 
-        # Create a mock variables_config with some values
-        mock_config = Mock(spec=JupyterDeployVariablesConfig)
-        mock_config.required = {"var1": "value1", "var2": "value2"}
-        mock_config.required_sensitive = {"var3": "value3", "var4": "value4"}
-        mock_config.overrides = {"var5": "value55"}
-        mock_config.defaults = {"var5": "value5", "var6": "value6"}
-
-        # Create mock for new config with model_dump
-        mock_new_config = Mock()
-        mock_new_config.model_dump.return_value = {
-            "schema_version": 1,
-            "required": {"var1": "value1", "var2": "value2"},
-            "required_sensitive": {"var3": None, "var4": None},
-            "overrides": {"var5": "value55"},
-            "defaults": {"var5": "value5", "var6": "value6"},
-        }
-
-        # Patch the variables_config property to return our mock
+        mock_config = JupyterDeployVariablesConfigV2(
+            schema_version=2,
+            required={"var1": "value1", "var2": "value2"},
+            required_sensitive={"var3": "value3", "var4": "value4"},
+            overrides={"var5": "value55"},
+        )
         handler._variables_config = mock_config
 
-        # Execute with patched JupyterDeployVariablesConfigV1
         handler.reset_recorded_secrets()
 
         # Verify
         mock_write.assert_called_once()
-        # Get the data that was passed to write_yaml_file_with_comments
-        written_data = mock_write.call_args[0][1]
+        written_config: JupyterDeployVariablesConfigV2 = mock_write.call_args[0][0]
 
-        # Check the model_dump output was passed to write_yaml_file_with_comments
-        self.assertEqual(written_data, mock_new_config.model_dump.return_value)
-
-        # Check that required_sensitive keys are preserved but values are None
-        self.assertEqual(list(written_data["required_sensitive"].keys()), list(mock_config.required_sensitive.keys()))
-        for val in written_data["required_sensitive"].values():
+        # Required preserved
+        self.assertEqual(written_config.required, {"var1": "value1", "var2": "value2"})
+        # Overrides preserved
+        self.assertEqual(written_config.overrides, {"var5": "value55"})
+        # Sensitive keys preserved but values are None
+        self.assertEqual(set(written_config.required_sensitive.keys()), {"var3", "var4"})
+        for val in written_config.required_sensitive.values():
             self.assertIsNone(val)
 
-    @patch("jupyter_deploy.fs_utils.write_yaml_file_with_comments")
-    def test_calls_write_with_comments_and_key_order(self, mock_write: Mock) -> None:
-        # Setup
+    @patch.object(DummyVariablesHandler, "_write_variables_config")
+    def test_writes_v2_config(self, mock_write: Mock) -> None:
         project_path = Path("/mock/project")
         manifest = Mock()
         handler = DummyVariablesHandler(
             project_path=project_path, project_manifest=manifest, display_manager=NullDisplay()
         )
 
-        # Create a mock variables_config
-        mock_config = Mock(spec=JupyterDeployVariablesConfig)
-        mock_config.required = {}
-        mock_config.required_sensitive = {}
-        mock_config.overrides = {}
-        mock_config.defaults = {}
-
-        # Patch the variables_config property to return our mock
+        mock_config = JupyterDeployVariablesConfigV2(schema_version=2, required={}, required_sensitive={}, overrides={})
         handler._variables_config = mock_config
 
-        # Execute
         handler.reset_recorded_secrets()
 
-        # Verify that write_yaml_file_with_comments was called with the correct arguments
         mock_write.assert_called_once()
-        self.assertEqual(mock_write.call_args[0][0], project_path / constants.VARIABLES_FILENAME)
-        self.assertEqual(mock_write.call_args[1]["key_order"], VARIABLES_CONFIG_V1_KEYS_ORDER)
-        self.assertEqual(mock_write.call_args[1]["comments"], VARIABLES_CONFIG_V1_COMMENTS)
+        written_config: JupyterDeployVariablesConfigV2 = mock_write.call_args[0][0]
+        self.assertEqual(written_config.schema_version, 2)
 
-    @patch("jupyter_deploy.fs_utils.write_yaml_file_with_comments")
+    @patch.object(DummyVariablesHandler, "_write_variables_config")
     def test_raises_when_write_method_raises(self, mock_write: Mock) -> None:
-        # Setup
         project_path = Path("/mock/project")
         manifest = Mock()
         handler = DummyVariablesHandler(
             project_path=project_path, project_manifest=manifest, display_manager=NullDisplay()
         )
 
-        # Create a mock variables_config
-        mock_config = Mock(spec=JupyterDeployVariablesConfig)
-        mock_config.required = {}
-        mock_config.required_sensitive = {}
-        mock_config.overrides = {}
-        mock_config.defaults = {}
-
-        # Patch the variables_config property to return our mock
+        mock_config = JupyterDeployVariablesConfigV2(schema_version=2, required={}, required_sensitive={}, overrides={})
         handler._variables_config = mock_config
 
-        # Make write_yaml_file_with_comments raise an exception
         mock_write.side_effect = OSError("Write error")
 
-        # Execute and verify that the exception propagates
         with self.assertRaises(OSError):
             handler.reset_recorded_secrets()

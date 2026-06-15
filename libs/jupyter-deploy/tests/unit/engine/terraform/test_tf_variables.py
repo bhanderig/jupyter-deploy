@@ -1,6 +1,6 @@
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from jupyter_deploy.engine.supervised_execution import NullDisplay
 from jupyter_deploy.engine.terraform.tf_variables import TerraformVariablesHandler
@@ -534,9 +534,14 @@ class TestResetRecordedVariables(unittest.TestCase):
         # Execute
         handler.reset_recorded_variables()
 
-        # Assert parent method was called and delete_file was called with correct path
+        # Assert parent method was called and delete_file was called for recorded + staging
         mock_parent_reset.assert_called_once()
-        mock_delete_file.assert_called_once_with(project_path / "engine" / "jdinputs.auto.tfvars")
+        expected_calls = [
+            call(project_path / "engine" / "jdinputs.auto.tfvars"),
+            call(project_path / "engine" / "jdinputs.staging.auto.tfvars"),
+        ]
+        mock_delete_file.assert_has_calls(expected_calls, any_order=False)
+        self.assertEqual(mock_delete_file.call_count, 2)
 
     @patch("jupyter_deploy.engine.engine_variables.EngineVariablesHandler.reset_recorded_variables")
     @patch("jupyter_deploy.fs_utils.delete_file_if_exists")
@@ -555,7 +560,6 @@ class TestResetRecordedVariables(unittest.TestCase):
 
         # Assert
         mock_parent_reset.assert_called_once()
-        mock_delete_file.assert_called_once()
         self.assertTrue(result, "Should return True when file was deleted")
 
     @patch("jupyter_deploy.engine.engine_variables.EngineVariablesHandler.reset_recorded_variables")
@@ -576,7 +580,6 @@ class TestResetRecordedVariables(unittest.TestCase):
             handler.reset_recorded_variables()
 
         mock_parent_reset.assert_called_once()
-        mock_delete_file.assert_called_once()
 
 
 class TestResetRecordedSecrets(unittest.TestCase):
@@ -594,9 +597,14 @@ class TestResetRecordedSecrets(unittest.TestCase):
         # Execute
         handler.reset_recorded_secrets()
 
-        # Assert parent method was called and delete_file was called with correct path
+        # Assert parent method was called and delete_file was called for recorded + staging
         mock_parent_reset.assert_called_once()
-        mock_delete_file.assert_called_once_with(project_path / "engine" / "jdinputs.secrets.auto.tfvars")
+        expected_calls = [
+            call(project_path / "engine" / "jdinputs.secrets.auto.tfvars"),
+            call(project_path / "engine" / "jdinputs.staging.secrets.auto.tfvars"),
+        ]
+        mock_delete_file.assert_has_calls(expected_calls, any_order=False)
+        self.assertEqual(mock_delete_file.call_count, 2)
 
     @patch("jupyter_deploy.engine.engine_variables.EngineVariablesHandler.reset_recorded_secrets")
     @patch("jupyter_deploy.fs_utils.delete_file_if_exists")
@@ -615,7 +623,6 @@ class TestResetRecordedSecrets(unittest.TestCase):
 
         # Assert
         mock_parent_reset.assert_called_once()
-        mock_delete_file.assert_called_once()
         self.assertTrue(result, "Should return True when file was deleted")
 
     @patch("jupyter_deploy.engine.engine_variables.EngineVariablesHandler.reset_recorded_secrets")

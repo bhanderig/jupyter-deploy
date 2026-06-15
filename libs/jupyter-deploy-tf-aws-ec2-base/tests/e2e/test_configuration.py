@@ -1,10 +1,12 @@
 """E2E tests for project configuration validation."""
 
+import os
 import re
 import subprocess
 
 import pytest
 import yaml
+from pytest_jupyter_deploy.cli import JDCliError
 from pytest_jupyter_deploy.deployment import EndToEndDeployment
 from pytest_jupyter_deploy.plugin import skip_if_testvars_not_set
 from pytest_jupyter_deploy.undeployed_project import undeployed_project
@@ -392,3 +394,116 @@ def test_config_with_stale_store_id_fails_with_hint_and_reset_recovers(
             f"Expected same store to be rediscovered. Initial: '{initial_store_id}', "
             f"After reset: '{recovered_store_id}'"
         )
+
+
+@pytest.mark.cli
+@skip_if_testvars_not_set(
+    [
+        "JD_E2E_VAR_DOMAIN",
+        "JD_E2E_VAR_EMAIL",
+        "JD_E2E_VAR_OAUTH_APP_CLIENT_ID",
+        "JD_E2E_VAR_OAUTH_ALLOWED_TEAMS",
+        "JD_E2E_VAR_OAUTH_ALLOWED_USERNAMES",
+        "JD_E2E_VAR_SUBDOMAIN",
+        "JD_E2E_VAR_OAUTH_APP_CLIENT_SECRET",
+    ]
+)
+def test_config_error_recovery_with_variable_fix(e2e_deployment: EndToEndDeployment) -> None:
+    """Test error recovery: bad override value fails plan, fix via variables.yaml succeeds.
+
+    Flow:
+    1. Configure with valid required values + an invalid additional_efs_mounts override
+    2. `jd config` fails (terraform validation rejects the bad EFS mount)
+    3. Fix the override directly in variables.yaml
+    4. Run `jd config` again — succeeds without re-entering any values
+    """
+    with undeployed_project(e2e_deployment.suite_config) as (project_path, cli):
+        # Prepare valid configuration
+        e2e_deployment.suite_config.prepare_configuration("base", target_dir=project_path)
+
+        # Inject a bad additional_efs_mounts override (missing both 'name' and 'id')
+        variables_path = project_path / "variables.yaml"
+        with open(variables_path) as f:
+            config = yaml.safe_load(f)
+
+        config["overrides"] = config.get("overrides") or {}
+        config["overrides"]["additional_efs_mounts"] = [{"invalid_key": "bad-value", "mount_point": "test-efs"}]
+        with open(variables_path, "w") as f:
+            yaml.dump(config, f, sort_keys=False)
+
+        # --- First run: should fail due to EFS mount validation ---
+        with pytest.raises(JDCliError) as exc_info:
+            cli.run_command(["jupyter-deploy", "config"])
+
+        assert "name" in str(exc_info.value).lower() or "id" in str(exc_info.value).lower(), (
+            f"Expected validation error about 'name' or 'id', got: {exc_info.value}"
+        )
+
+        # --- Fix the override directly in variables.yaml ---
+        with open(variables_path) as f:
+            config = yaml.safe_load(f)
+
+        config["overrides"]["additional_efs_mounts"] = [{"name": "test-efs", "mount_point": "test-efs"}]
+        with open(variables_path, "w") as f:
+            yaml.dump(config, f, sort_keys=False)
+
+        # --- Second run: should succeed without prompting ---
+        # All values are preserved in variables.yaml; only the bad override was fixed.
+        result = cli.run_command(["jupyter-deploy", "config"])
+        assert "Your project is ready" in result.stdout
+
+
+@pytest.mark.cli
+@skip_if_testvars_not_set(
+    [
+        "JD_E2E_VAR_DOMAIN",
+        "JD_E2E_VAR_EMAIL",
+        "JD_E2E_VAR_OAUTH_APP_CLIENT_ID",
+        "JD_E2E_VAR_OAUTH_ALLOWED_TEAMS",
+        "JD_E2E_VAR_OAUTH_ALLOWED_USERNAMES",
+        "JD_E2E_VAR_SUBDOMAIN",
+        "JD_E2E_VAR_OAUTH_APP_CLIENT_SECRET",
+    ]
+)
+def test_config_error_recovery_with_cli_variable_fix(e2e_deployment: EndToEndDeployment) -> None:
+    """Test error recovery: invalid domain fails plan, fix via --domain flag succeeds.
+
+    Flow:
+    1. Configure with an invalid domain (contains underscore)
+    2. `jd config` fails (terraform validation rejects the domain)
+    3. Re-run `jd config --domain CORRECT-DOMAIN` — the CLI flag persists the fix
+       to variables.yaml before plan, and plan succeeds
+    """
+    domain = os.environ["JD_E2E_VAR_DOMAIN"]
+    invalid_domain = "bad_domain.com"
+
+    with undeployed_project(e2e_deployment.suite_config) as (project_path, cli):
+        # Prepare valid configuration, then inject the bad domain
+        e2e_deployment.suite_config.prepare_configuration("base", target_dir=project_path)
+
+        variables_path = project_path / "variables.yaml"
+        with open(variables_path) as f:
+            config = yaml.safe_load(f)
+        config["required"]["domain"] = invalid_domain
+        with open(variables_path, "w") as f:
+            yaml.dump(config, f, sort_keys=False)
+
+        # --- First run: should fail due to domain validation ---
+        with pytest.raises(JDCliError):
+            cli.run_command(["jupyter-deploy", "config"])
+
+        # Verify the bad domain is persisted in variables.yaml (not lost)
+        with open(variables_path) as f:
+            config_after_fail = yaml.safe_load(f)
+        assert config_after_fail["required"]["domain"] == invalid_domain
+
+        # --- Second run: fix via CLI --domain flag ---
+        # The --domain flag writes the correct value to variables.yaml before plan,
+        # so even if we don't manually edit the file, the fix is applied.
+        result = cli.run_command(["jupyter-deploy", "config", "--domain", domain])
+        assert "Your project is ready" in result.stdout
+
+        # Verify the fixed domain is now in variables.yaml
+        with open(variables_path) as f:
+            config_after_fix = yaml.safe_load(f)
+        assert config_after_fix["required"]["domain"] == domain

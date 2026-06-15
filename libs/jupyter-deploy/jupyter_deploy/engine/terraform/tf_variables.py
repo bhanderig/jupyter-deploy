@@ -11,6 +11,8 @@ from jupyter_deploy.engine.terraform.tf_constants import (
     TF_PRESETS_DIR,
     TF_RECORDED_SECRETS_FILENAME,
     TF_RECORDED_VARS_FILENAME,
+    TF_STAGING_SECRETS_FILENAME,
+    TF_STAGING_VARS_FILENAME,
     TF_VARIABLES_FILENAME,
     get_preset_filename,
 )
@@ -36,6 +38,12 @@ class TerraformVariablesHandler(EngineVariablesHandler):
 
     def get_recorded_secrets_filepath(self) -> Path:
         return self.engine_dir_path / TF_RECORDED_SECRETS_FILENAME
+
+    def get_staging_variables_filepath(self) -> Path:
+        return self.engine_dir_path / TF_STAGING_VARS_FILENAME
+
+    def get_staging_secrets_filepath(self) -> Path:
+        return self.engine_dir_path / TF_STAGING_SECRETS_FILENAME
 
     def is_template_directory(self) -> bool:
         return fs_utils.file_exists(self.engine_dir_path / TF_VARIABLES_FILENAME)
@@ -100,6 +108,95 @@ class TerraformVariablesHandler(EngineVariablesHandler):
         if updated_tfvars_lines:
             fs_utils.write_inline_file_content(tfvars_path, updated_tfvars_lines)
 
+    def sync_engine_varfiles_to_staging(self) -> None:
+        """Sync variables.yaml values to staging .tfvars files instead of recorded files.
+
+        Used during `jd config` so that a failed terraform plan doesn't corrupt
+        the last-known-good recorded state.
+        """
+        varvalues, sensitive_varvalues = self._collect_varvalues_from_config()
+        self.update_variable_records_staging(varvalues)
+        self.update_variable_records_staging(sensitive_varvalues, sensitive=True)
+
+    def update_variable_records_staging(self, varvalues: dict[str, Any], sensitive: bool = False) -> None:
+        """Write variable values to staging .tfvars files (not the recorded files).
+
+        Staging files overlay the recorded files during terraform plan. They are
+        promoted to recorded files on success, or discarded on failure.
+        """
+        if not varvalues:
+            return
+
+        template_vars = self.get_template_variables()
+
+        updated_vals: dict[str, Any] = {}
+        for varname, varvalue in varvalues.items():
+            existing_vardef = template_vars.get(varname)
+            if not existing_vardef:
+                raise KeyError(f"Variable not found: {varname}")
+            converted_value = existing_vardef.validate_value(varvalue)
+            updated_vals[varname] = converted_value
+
+        for varname in varvalues:
+            existing_vardef = template_vars[varname]
+            existing_vardef.assigned_value = updated_vals[varname]
+
+        file_name = TF_STAGING_VARS_FILENAME if not sensitive else TF_STAGING_SECRETS_FILENAME
+        tfvars_path = self.engine_dir_path / file_name
+        previous_tfvars_content: str = ""
+        if fs_utils.file_exists(tfvars_path):
+            previous_tfvars_content = fs_utils.read_short_file(tfvars_path)
+
+        updated_tfvars_lines = tf_varfiles.parse_and_update_dot_tfvars_content(previous_tfvars_content, varvalues)
+
+        if updated_tfvars_lines:
+            fs_utils.write_inline_file_content(tfvars_path, updated_tfvars_lines)
+
+    def promote_staging_to_recorded(self) -> None:
+        """Promote staging .tfvars files to become the recorded files.
+
+        Called after a successful terraform plan + record cycle. Merges staging
+        content into the recorded files, then removes staging files.
+        """
+        self._merge_staging_file(
+            staging_path=self.get_staging_variables_filepath(),
+            recorded_path=self.get_recorded_variables_filepath(),
+        )
+        self._merge_staging_file(
+            staging_path=self.get_staging_secrets_filepath(),
+            recorded_path=self.get_recorded_secrets_filepath(),
+        )
+
+    def discard_staging(self) -> None:
+        """Remove staging .tfvars files without promoting them."""
+        fs_utils.delete_file_if_exists(self.get_staging_variables_filepath())
+        fs_utils.delete_file_if_exists(self.get_staging_secrets_filepath())
+
+    def _merge_staging_file(self, staging_path: Path, recorded_path: Path) -> None:
+        """Merge a staging file's content into the recorded file, then delete staging."""
+        if not staging_path.exists():
+            return
+
+        staging_content = fs_utils.read_short_file(staging_path)
+        if not staging_content.strip():
+            fs_utils.delete_file_if_exists(staging_path)
+            return
+
+        # Read existing recorded content (may not exist yet)
+        recorded_content: str = ""
+        if fs_utils.file_exists(recorded_path):
+            recorded_content = fs_utils.read_short_file(recorded_path)
+
+        # Parse staging to get the variable values
+        staging_vars = tf_varfiles.parse_dot_tfvars_to_dict(staging_content)
+
+        # Merge into recorded
+        updated_lines = tf_varfiles.parse_and_update_dot_tfvars_content(recorded_content, staging_vars)
+        if updated_lines:
+            fs_utils.write_inline_file_content(recorded_path, updated_lines)
+
+        fs_utils.delete_file_if_exists(staging_path)
+
     def create_filtered_preset_file(self, base_preset_path: Path) -> Path:
         """Read the base preset, override values, write in a new preset file and return its path."""
         filtered_tfvars_file_path = self.project_path / TF_ENGINE_DIR / TF_CUSTOM_PRESET_FILENAME
@@ -126,6 +223,9 @@ class TerraformVariablesHandler(EngineVariablesHandler):
         path = self.get_recorded_variables_filepath()
         tfvars_deleted = fs_utils.delete_file_if_exists(path)
 
+        # Also clean up any leftover staging files
+        fs_utils.delete_file_if_exists(self.get_staging_variables_filepath())
+
         return parent_deleted or tfvars_deleted
 
     def reset_recorded_secrets(self) -> bool:
@@ -138,5 +238,8 @@ class TerraformVariablesHandler(EngineVariablesHandler):
 
         path = self.get_recorded_secrets_filepath()
         tfvars_deleted = fs_utils.delete_file_if_exists(path)
+
+        # Also clean up any leftover staging files
+        fs_utils.delete_file_if_exists(self.get_staging_secrets_filepath())
 
         return parent_deleted or tfvars_deleted

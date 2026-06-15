@@ -5,6 +5,7 @@ import os
 
 import pexpect
 import pytest
+import yaml
 from pytest_jupyter_deploy.deployment import EndToEndDeployment
 from pytest_jupyter_deploy.plugin import skip_if_testvars_not_set
 from pytest_jupyter_deploy.undeployed_project import undeployed_project
@@ -275,3 +276,56 @@ def test_config_interactive_verbose(e2e_deployment: EndToEndDeployment) -> None:
         assert users_list == expected_users, (
             f"Expected oauth_allowed_usernames to be {expected_users}, got {users_list}"
         )
+
+
+@pytest.mark.cli
+@skip_if_testvars_not_set(REQUIRED_DEPLOYMENT_VARS)
+def test_config_interactive_error_recovery(e2e_deployment: EndToEndDeployment) -> None:
+    """Test that after a failed config, setting the bad value to null re-prompts only that variable.
+
+    Flow:
+    1. Set up variables.yaml with all correct values except subdomain (invalid)
+    2. Run `jd config` — fails due to subdomain validation
+    3. Set subdomain to null in variables.yaml (user signals "I want to re-enter this")
+    4. Run `jd config` again — terraform prompts ONLY for subdomain
+    5. Provide the correct value — config succeeds
+    """
+    subdomain = os.environ["JD_E2E_VAR_SUBDOMAIN"]
+    invalid_subdomain = "bad_subdomain"
+
+    with undeployed_project(e2e_deployment.suite_config) as (project_path, cli):
+        # Prepare a valid configuration, then inject the bad subdomain
+        e2e_deployment.suite_config.prepare_configuration("base", target_dir=project_path)
+
+        variables_path = project_path / "variables.yaml"
+        with open(variables_path) as f:
+            config = yaml.safe_load(f)
+        config["required"]["subdomain"] = invalid_subdomain
+        with open(variables_path, "w") as f:
+            yaml.dump(config, f, sort_keys=False)
+
+        # --- First run: should fail due to subdomain validation ---
+        with cli.spawn_interactive_session("jupyter-deploy config", timeout=120) as session:
+            session.expect(pexpect.EOF, timeout=90)
+            session.close()
+            assert session.exitstatus != 0, "Expected config to fail with invalid subdomain"
+
+        # --- Set the bad subdomain to null to trigger a re-prompt ---
+        with open(variables_path) as f:
+            config = yaml.safe_load(f)
+        config["required"]["subdomain"] = None
+        with open(variables_path, "w") as f:
+            yaml.dump(config, f, sort_keys=False)
+
+        # --- Second run: only subdomain should be prompted ---
+        # All other values are set in variables.yaml and synced to .tfvars.
+        # Terraform only prompts for variables with no value — just subdomain.
+        with cli.spawn_interactive_session("jupyter-deploy config", timeout=120) as session:
+            session.expect(r"var\.subdomain", timeout=60)
+            session.sendline(subdomain)
+
+            session.expect(pexpect.EOF, timeout=90)
+            session.close()
+            assert session.exitstatus == 0, (
+                f"Expected config to succeed after fixing subdomain, got exit {session.exitstatus}"
+            )

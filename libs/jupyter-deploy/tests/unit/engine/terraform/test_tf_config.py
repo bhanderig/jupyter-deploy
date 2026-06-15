@@ -42,9 +42,12 @@ class TestTerraformConfigHandler(unittest.TestCase):
         mock_handler = Mock()
         mock_get_recorded_variables_filepath = Mock()
         mock_get_recorded_secrets_filepath = Mock()
+        mock_get_staging_variables_filepath = Mock()
+        mock_get_staging_secrets_filepath = Mock()
         mock_reset_recorded_variables = Mock()
         mock_reset_recorded_secrets = Mock()
-        mock_sync_engine_varfiles = Mock()
+        mock_sync_engine_varfiles_to_staging = Mock()
+        mock_discard_staging = Mock()
         mock_sync_variables_config = Mock()
         mock_get_template_variables = Mock()
         mock_update_variable_records = Mock()
@@ -52,9 +55,12 @@ class TestTerraformConfigHandler(unittest.TestCase):
 
         mock_handler.get_recorded_variables_filepath = mock_get_recorded_variables_filepath
         mock_handler.get_recorded_secrets_filepath = mock_get_recorded_secrets_filepath
+        mock_handler.get_staging_variables_filepath = mock_get_staging_variables_filepath
+        mock_handler.get_staging_secrets_filepath = mock_get_staging_secrets_filepath
         mock_handler.reset_recorded_variables = mock_reset_recorded_variables
         mock_handler.reset_recorded_secrets = mock_reset_recorded_secrets
-        mock_handler.sync_engine_varfiles_with_project_variables_config = mock_sync_engine_varfiles
+        mock_handler.sync_engine_varfiles_to_staging = mock_sync_engine_varfiles_to_staging
+        mock_handler.discard_staging = mock_discard_staging
         mock_handler.sync_project_variables_config = mock_sync_variables_config
         mock_handler.get_template_variables = mock_get_template_variables
         mock_handler.update_variable_records = mock_update_variable_records
@@ -62,14 +68,20 @@ class TestTerraformConfigHandler(unittest.TestCase):
 
         mock_get_recorded_variables_filepath.return_value = TestTerraformConfigHandler.MOCK_RECORD_VARS_PATH
         mock_get_recorded_secrets_filepath.return_value = TestTerraformConfigHandler.MOCK_RECORD_SECRETS_PATH
+        # Staging paths return non-existent paths by default (no staging file to add as -var-file)
+        mock_get_staging_variables_filepath.return_value = Path("/tmp/nonexistent-staging-vars.tfvars")
+        mock_get_staging_secrets_filepath.return_value = Path("/tmp/nonexistent-staging-secrets.tfvars")
         mock_create_filtered_preset_file.return_value = TestTerraformConfigHandler.MOCK_OVERRIDE_PRESET_PATH
 
         return mock_handler, {
             "get_recorded_variables_filepath": mock_get_recorded_variables_filepath,
             "get_recorded_secrets_filepath": mock_get_recorded_secrets_filepath,
+            "get_staging_variables_filepath": mock_get_staging_variables_filepath,
+            "get_staging_secrets_filepath": mock_get_staging_secrets_filepath,
             "reset_recorded_variables": mock_reset_recorded_variables,
             "reset_recorded_secrets": mock_reset_recorded_secrets,
-            "sync_engine_varfiles_with_project_variables_config": mock_sync_engine_varfiles,
+            "sync_engine_varfiles_to_staging": mock_sync_engine_varfiles_to_staging,
+            "discard_staging": mock_discard_staging,
             "sync_project_variables_config": mock_sync_variables_config,
             "get_template_variables": mock_get_template_variables,
             "update_variables_record": mock_update_variable_records,
@@ -308,7 +320,7 @@ class TestTerraformConfigHandler(unittest.TestCase):
         # Assert - configure completed successfully (no exception raised)
         self.assertEqual(mock_create_executor.call_count, 2)  # Init and plan
         self.assertEqual(mock_executor.execute.call_count, 2)
-        mock_vars_fns["sync_engine_varfiles_with_project_variables_config"].assert_called_once()
+        mock_vars_fns["sync_engine_varfiles_to_staging"].assert_called_once()
 
     @patch("jupyter_deploy.engine.terraform.tf_supervised_executor_factory.create_terraform_executor")
     @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
@@ -337,7 +349,7 @@ class TestTerraformConfigHandler(unittest.TestCase):
 
         # Verify preset file was created
         expect_called_path = path / TF_ENGINE_DIR / TF_PRESETS_DIR / "defaults-all.tfvars"
-        mock_vars_fns["sync_engine_varfiles_with_project_variables_config"].assert_called_once()
+        mock_vars_fns["sync_engine_varfiles_to_staging"].assert_called_once()
         mock_vars_fns["create_filtered_preset_file"].assert_called_once_with(expect_called_path)
 
     @patch("jupyter_deploy.engine.terraform.tf_supervised_executor_factory.create_terraform_executor")
@@ -381,7 +393,7 @@ class TestTerraformConfigHandler(unittest.TestCase):
 
         # Assert - configure completed successfully (no exception raised)
         self.assertEqual(mock_create_executor.call_count, 2)  # Init and plan
-        mock_vars_fns["sync_engine_varfiles_with_project_variables_config"].assert_called_once()
+        mock_vars_fns["sync_engine_varfiles_to_staging"].assert_called_once()
         mock_vars_fns["create_filtered_preset_file"].assert_called_once()
 
         # Verify the executor was called with the plan commands
@@ -429,7 +441,7 @@ class TestTerraformConfigHandler(unittest.TestCase):
         self.assertEqual(context.exception.command, "config")
         self.assertEqual(mock_create_executor.call_count, 1)  # Only init should be called
         self.assertEqual(mock_executor.execute.call_count, 1)
-        mock_vars_fns["sync_engine_varfiles_with_project_variables_config"].assert_not_called()
+        mock_vars_fns["sync_engine_varfiles_to_staging"].assert_not_called()
 
     @patch("jupyter_deploy.engine.terraform.tf_supervised_executor_factory.create_terraform_executor")
     @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
@@ -453,7 +465,7 @@ class TestTerraformConfigHandler(unittest.TestCase):
 
         self.assertEqual(mock_create_executor.call_count, 1)  # Only init should be called
         self.assertEqual(mock_executor.execute.call_count, 1)
-        mock_vars_fns["sync_engine_varfiles_with_project_variables_config"].assert_not_called()
+        mock_vars_fns["sync_engine_varfiles_to_staging"].assert_not_called()
 
     @patch("jupyter_deploy.engine.terraform.tf_supervised_executor_factory.create_terraform_executor")
     @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
@@ -479,7 +491,7 @@ class TestTerraformConfigHandler(unittest.TestCase):
         self.assertEqual(context.exception.command, "config")
         self.assertEqual(mock_create_executor.call_count, 2)  # Both init and plan
         self.assertEqual(mock_executor.execute.call_count, 2)
-        mock_vars_fns["sync_engine_varfiles_with_project_variables_config"].assert_called_once()
+        mock_vars_fns["sync_engine_varfiles_to_staging"].assert_called_once()
 
     @patch("jupyter_deploy.engine.terraform.tf_supervised_executor_factory.create_terraform_executor")
     @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
@@ -503,7 +515,45 @@ class TestTerraformConfigHandler(unittest.TestCase):
 
         self.assertEqual(mock_create_executor.call_count, 2)  # Both init and plan
         self.assertEqual(mock_executor.execute.call_count, 2)
-        mock_vars_fns["sync_engine_varfiles_with_project_variables_config"].assert_called_once()
+        mock_vars_fns["sync_engine_varfiles_to_staging"].assert_called_once()
+
+    @patch("jupyter_deploy.engine.terraform.tf_supervised_executor_factory.create_terraform_executor")
+    @patch("jupyter_deploy.engine.terraform.tf_variables.TerraformVariablesHandler")
+    def test_configure_persists_variable_overrides_to_yaml_before_plan(
+        self, mock_variable_handler_cls: Mock, mock_create_executor: Mock
+    ) -> None:
+        """CLI --variable values are written to variables.yaml before plan runs,
+        so they survive even if terraform plan fails."""
+        # Arrange
+        mock_vars_handler, mock_vars_fns = self.get_mock_variable_handler_and_fns()
+        mock_variable_handler_cls.return_value = mock_vars_handler
+
+        # Mock executor: init succeeds, plan fails
+        mock_executor = Mock()
+        mock_executor.execute.side_effect = [0, 1]
+        mock_create_executor.return_value = mock_executor
+
+        # Create variable overrides (simulating --region us-east-1 --instance-type t3.large)
+        region_override = Mock()
+        region_override.assigned_value = "us-east-1"
+        instance_override = Mock()
+        instance_override.assigned_value = "t3.large"
+
+        # to_tf_var_option returns the CLI args for terraform
+        with patch("jupyter_deploy.engine.terraform.tf_vardefs.to_tf_var_option", return_value=["-var=x"]):
+            handler = TerraformConfigHandler(Path("/fake/path"), Mock(), self.get_mock_command_history(), NullDisplay())
+
+            # Act — plan fails, but overrides should still be persisted
+            with self.assertRaises(SupervisedExecutionError):
+                handler.configure(variable_overrides={"region": region_override, "instance_type": instance_override})
+
+        # Assert — sync_project_variables_config was called with the CLI values
+        # BEFORE the plan ran (so they survive the failure)
+        mock_vars_fns["sync_project_variables_config"].assert_called_once_with(
+            {"region": "us-east-1", "instance_type": "t3.large"}
+        )
+        # Staging was discarded after the failed plan
+        mock_vars_fns["discard_staging"].assert_called_once()
 
     @patch("jupyter_deploy.engine.terraform.tf_plan_metadata.save_plan_metadata")
     @patch("jupyter_deploy.engine.terraform.tf_plan.extract_resource_counts_from_plan")

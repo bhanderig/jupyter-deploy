@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import yaml
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from yaml.parser import ParserError
 from yaml.scanner import ScannerError
 
@@ -154,7 +154,12 @@ def retrieve_variables_config(variables_config_path: Path) -> variables_config.J
             "Invalid variables config file: jupyter-deploy variables config is not a dict."
         )
 
-    return variables_config.JupyterDeployVariablesConfig(**content)
+    # JupyterDeployVariablesConfig is a type alias (discriminated union), not a class —
+    # TypeAdapter is required to validate data against it and route to V1 or V2.
+    adapter: TypeAdapter[variables_config.JupyterDeployVariablesConfig] = TypeAdapter(
+        variables_config.JupyterDeployVariablesConfig
+    )
+    return adapter.validate_python(content)  # type: ignore[return-value]
 
 
 def retrieve_store_config(project_path: Path) -> store_config.JupyterDeployStoreConfig | None:

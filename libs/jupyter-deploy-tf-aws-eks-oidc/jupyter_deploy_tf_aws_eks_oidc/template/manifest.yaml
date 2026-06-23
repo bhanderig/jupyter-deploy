@@ -11,6 +11,7 @@ requirements:
 - name: terraform
 - name: awscli
 - name: kubectl
+- name: yq
 values:
 - name: deployment_id
   source: output

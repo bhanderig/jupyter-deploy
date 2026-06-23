@@ -137,6 +137,12 @@ resource "helm_release" "workspace_router" {
         name  = "accessStrategy.createNamespace"
         value = "false"
       },
+      # Workspace ingress NetworkPolicy is owned by the workspace-defaults chart
+      # (namespace-scoped), not created per-workspace by the router chart.
+      {
+        name  = "accessStrategy.createNetworkPolicy"
+        value = "false"
+      },
       {
         name  = "githubRbac.create"
         value = "false"

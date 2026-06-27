@@ -42,6 +42,8 @@ jd config
 jd up
 ```
 
+> When `create_review_resources = true`: each `review_repos` repo's `review` GitHub Actions environment MUST have protection rules (required reviewers and/or restricted branches/tags). The run role trusts `repo:<org>/<repo>:environment:review` via OIDC, which only proves a job declared the environment, not that the workflow was trusted; without protection rules a malicious PR could assume the run role on its own terms.
+
 ### Inspect outputs
 ```bash
 # View all outputs
@@ -147,6 +149,12 @@ This project:
 | github_oauth_app_1..5 | `map(string)` | Required | OAuth app metadata: client_id, app_id, app_url, callback_url |
 | github_oauth_app_client_secret_1..5 | `string` | Required (sensitive) | GitHub OAuth app client secrets |
 | test_results_bucket_prefix | `string` | `jd-ci-e2e-results` | Prefix for the S3 bucket that stores E2E test results (3-28 chars) |
+| create_review_resources | `bool` | `false` | Whether to create the roborev review resources (ECR repo + publish/run roles); off for CI-only deployments |
+| publish_repo | `string` | `jupyter-deploy` | GitHub repo that builds and pushes the review image (used when create_review_resources is true) |
+| review_repos | `list(string)` | `[]` | GitHub repos that run reviews (used when create_review_resources is true) |
+| bedrock_inference_profile_ids | `list(string)` | `["us.anthropic.claude-*"]` | Inference profiles the run role may invoke; region and account are filled in |
+| bedrock_foundation_model_arns | `list(string)` | `["arn:aws:bedrock:us-*::foundation-model/anthropic.claude-*"]` | Foundation-model ARNs the run role may invoke (AWS-owned, no account) |
+| review_resource_prefix | `string` | `jupyter-infra-review` | Naming prefix for the review ECR repo and IAM roles |
 
 ## Outputs
 | Name | Description |
@@ -164,6 +172,9 @@ This project:
 | `github_oauth_app_client_secret_1..5_arn` | ARNs of the secrets for OAuth app client secrets |
 | `ecr_repository_url_1..5` | URLs of the ECR repositories for pre-built E2E test images |
 | `test_results_bucket_name` | Name of the S3 bucket for E2E test result uploads |
+| `review_publish_iam_role_arn` | ARN of the IAM role that builds and pushes the review image (null unless create_review_resources) |
+| `review_run_iam_role_arn` | ARN of the IAM role that pulls the review image and runs reviews (null unless create_review_resources) |
+| `review_image_repository_url` | URL of the ECR repository for the roborev review image (null unless create_review_resources) |
 
 ## License
 

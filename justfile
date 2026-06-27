@@ -973,3 +973,70 @@ env-setup-base project_dir ci_dir="sandbox-ci" oauth_app_num="1" options="":
 # Example: just env-setup-eks "" sandbox-ci 4 'org=jupyter-infra,team=my-team,rbac-team=my-team'
 env-setup-eks project_dir ci_dir="sandbox-ci" oauth_app_num="4" options="":
     uv run python scripts/env_setup_eks.py "{{project_dir}}" {{ci_dir}} {{oauth_app_num}} "{{options}}"
+
+# --- roborev review image (tf-aws-iam-review template) ---
+
+# Build the roborev review image (self-contained: roborev + claude-code agent + gh)
+# Usage: just ci-review-build                     # local: no cache
+# Usage: just ci-review-build <ecr-url>:latest    # CI: use ECR :latest as layer cache
+ci-review-build cache_from="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    CACHE_ARG=""
+    if [ -n "{{cache_from}}" ]; then
+        CACHE_ARG="--cache-from={{cache_from}}"
+        echo "Using cache from: {{cache_from}}"
+    fi
+
+    {{container-tool}} build \
+        -f .github/review/Dockerfile \
+        $CACHE_ARG \
+        -t jupyter-deploy-review:latest \
+        .
+
+    echo "✓ Review image built: jupyter-deploy-review:latest"
+
+# Push the roborev review image to ECR
+# Usage: just ci-review-push <ecr-repo-url> [extra-tag]
+# Pushes as :latest, and also as :<extra-tag> if provided (e.g. git sha)
+ci-review-push ecr_url extra_tag="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    ECR_REGISTRY=$(echo "{{ecr_url}}" | cut -d'/' -f1)
+    REGION=$(echo "{{ecr_url}}" | cut -d'.' -f4)
+
+    echo "Logging in to ECR..."
+    aws ecr get-login-password --region "$REGION" \
+        | {{container-tool}} login --username AWS --password-stdin "$ECR_REGISTRY"
+
+    echo "Pushing to {{ecr_url}}..."
+    {{container-tool}} tag jupyter-deploy-review:latest "{{ecr_url}}:latest"
+    {{container-tool}} push "{{ecr_url}}:latest"
+
+    if [ -n "{{extra_tag}}" ]; then
+        {{container-tool}} tag jupyter-deploy-review:latest "{{ecr_url}}:{{extra_tag}}"
+        {{container-tool}} push "{{ecr_url}}:{{extra_tag}}"
+        echo "✓ Pushed {{ecr_url}}:latest and {{ecr_url}}:{{extra_tag}}"
+    else
+        echo "✓ Pushed {{ecr_url}}:latest"
+    fi
+
+# Pull the roborev review image from ECR and tag as jupyter-deploy-review:latest
+# Usage: just ci-review-pull <ecr-repo-url> [tag]
+ci-review-pull ecr_url tag="latest":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    ECR_REGISTRY=$(echo "{{ecr_url}}" | cut -d'/' -f1)
+    REGION=$(echo "{{ecr_url}}" | cut -d'.' -f4)
+
+    echo "Logging in to ECR..."
+    aws ecr get-login-password --region "$REGION" \
+        | {{container-tool}} login --username AWS --password-stdin "$ECR_REGISTRY"
+
+    echo "Pulling {{ecr_url}}:{{tag}}..."
+    {{container-tool}} pull "{{ecr_url}}:{{tag}}"
+    {{container-tool}} tag "{{ecr_url}}:{{tag}}" jupyter-deploy-review:latest
+    echo "✓ Pulled and tagged as jupyter-deploy-review:latest"

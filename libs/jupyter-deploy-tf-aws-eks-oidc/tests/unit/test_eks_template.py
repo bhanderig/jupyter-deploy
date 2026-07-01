@@ -59,6 +59,58 @@ def test_chart_versions_match_template_version() -> None:
         )
 
 
+def _extract_depends_on_names(block: str, resource_type: str) -> set[str]:
+    """Return the set of `<resource_type>` names referenced in a depends_on list."""
+    match = re.search(r"depends_on\s*=\s*\[(.*?)\]", block, re.DOTALL)
+    assert match is not None, "no depends_on block found"
+    refs = re.findall(rf"{re.escape(resource_type)}\.(\w+)", match.group(1))
+    return set(refs)
+
+
+def _extract_resource_block(content: str, resource_type: str, resource_name: str) -> str:
+    """Return the body of a `resource "<type>" "<name>" {{ ... }}` block."""
+    start = re.search(
+        rf'resource\s+"{re.escape(resource_type)}"\s+"{re.escape(resource_name)}"\s*\{{',
+        content,
+    )
+    assert start is not None, f"resource {resource_type}.{resource_name} not found"
+
+    depth = 1
+    idx = start.end()
+    while idx < len(content) and depth > 0:
+        if content[idx] == "{":
+            depth += 1
+        elif content[idx] == "}":
+            depth -= 1
+        idx += 1
+    return content[start.end() : idx - 1]
+
+
+def test_all_eks_addons_gated_by_cluster_addons() -> None:
+    """Every aws_eks_addon MUST appear in null_resource.cluster_addons.depends_on.
+
+    This is the barrier that keeps all cluster addons alive until every Helm chart
+    has uninstalled (see eks_addons.tf comments). If a new addon is added but not
+    wired into this aggregator, the Helm destroy ordering silently regresses and
+    `jd down` can leave undeletable resources in etcd. Guard against that drift.
+    """
+    addons_tf = TEMPLATE_PATH / "engine" / "eks_addons.tf"
+    content = addons_tf.read_text()
+
+    declared_addons = set(re.findall(r'resource\s+"aws_eks_addon"\s+"(\w+)"', content))
+    assert declared_addons, "no aws_eks_addon resources found in eks_addons.tf"
+
+    cluster_addons_block = _extract_resource_block(content, "null_resource", "cluster_addons")
+    gated_addons = _extract_depends_on_names(cluster_addons_block, "aws_eks_addon")
+
+    missing = declared_addons - gated_addons
+    assert not missing, (
+        f"aws_eks_addon(s) {sorted(missing)} are not listed in "
+        "null_resource.cluster_addons.depends_on — Helm chart destroy ordering will "
+        "silently regress. Add them to the aggregator in eks_addons.tf."
+    )
+
+
 def test_main_tf_version_matches_template_version() -> None:
     manifest_path = TEMPLATE_PATH / "manifest.yaml"
     manifest = yaml.safe_load(manifest_path.read_text())

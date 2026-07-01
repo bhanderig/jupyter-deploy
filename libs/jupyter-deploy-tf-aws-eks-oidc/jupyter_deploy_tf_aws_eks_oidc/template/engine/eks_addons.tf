@@ -3,6 +3,46 @@ resource "time_sleep" "wait_for_nodes" {
   depends_on      = [module.eks_cluster]
 }
 
+# --- Addon ordering aggregators ---
+#
+# These two null_resources are single-source-of-truth barriers that let node
+# groups and Helm releases order themselves against the addons WITHOUT each one
+# re-deriving (and eventually getting wrong) the per-resource addon matrix.
+# No addon depends on a node group or a Helm release, so these introduce no cycle.
+
+# DaemonSet addons a node needs to be functional: vpc-cni (pod IPs) and kube-proxy
+# (Service/ClusterIP routing). The node group depends_on this, so on create the
+# CNI is in place before nodes join, and on destroy the nodes drain BEFORE these
+# are removed. Only DaemonSets belong here: they report healthy with zero nodes,
+# so requiring them before the node group never deadlocks. Deployment addons
+# (coredns, ebs-csi, ...) must NOT be here — they need a schedulable node, so
+# gating the node group on them would be a create-time cycle.
+resource "null_resource" "core_node_addons" {
+  depends_on = [
+    aws_eks_addon.vpc_cni,
+    aws_eks_addon.kube_proxy,
+  ]
+}
+
+# Every cluster addon. The Helm releases (helm.tf) depend_on this, so on create
+# all addons are up before any chart installs, and on destroy every chart
+# uninstalls BEFORE any addon is removed — i.e. the addons a chart relies on
+# (ebs-csi for PVC/PV teardown, coredns for in-cluster DNS, cert-manager,
+# external-dns, ...) stay alive for the entire uninstall. Add a new addon here
+# once and all charts inherit the ordering. external_dns is count-gated; the
+# splat reference resolves to an empty list when disabled.
+resource "null_resource" "cluster_addons" {
+  depends_on = [
+    aws_eks_addon.vpc_cni,
+    aws_eks_addon.kube_proxy,
+    aws_eks_addon.coredns,
+    aws_eks_addon.pod_identity_agent,
+    aws_eks_addon.ebs_csi_driver,
+    aws_eks_addon.cert_manager,
+    aws_eks_addon.external_dns,
+  ]
+}
+
 resource "aws_eks_addon" "vpc_cni" {
   cluster_name = module.eks_cluster.cluster_name
   addon_name   = "vpc-cni"

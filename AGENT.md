@@ -82,6 +82,7 @@ Code: `./libs/jupyter-deploy-tf-aws-eks-oidc`
 
 All `local-exec` provisioners MUST set `interpreter = ["/bin/bash", "-c"]` — Terraform defaults to `/bin/sh`.
 With `bootstrap_cluster_creator_admin_permissions = false`, the caller's IAM role MUST be listed in `admin_role_names` to retain cluster access. A `check` block validates this at plan time.
+Destroy order is load-bearing and enforced via `depends_on` (see `eks_addons.tf`/`iam_role`/`vpc` comments): VPC+roles → DaemonSet addons (CNI/kube-proxy) → node groups → Deployment addons (coredns/ebs-csi/…) → Helm releases → workspaces, so the operator stays alive through Helm uninstalls.
 
 ## CI infrastructure template package
 Code: `./libs/jupyter-infra-tf-aws-iam-ci`
@@ -259,5 +260,9 @@ Refer to `docs/AGENT.md`
 Refer to `diagrams/AGENT.md`
 
 ## Making changes in the GitHub CI
+
+Refer to `.github/AGENT.md`.
+
+## Handling releases to PyPI
 
 Refer to `.github/AGENT.md`

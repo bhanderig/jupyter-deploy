@@ -907,7 +907,7 @@ dev = [
 
 [[package]]
 name = "jupyter-deploy-tf-aws-eks-oidc"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "libs/jupyter-deploy-tf-aws-eks-oidc" }
 dependencies = [
     { name = "boto3" },
@@ -1769,7 +1769,7 @@ wheels = [
 
 [[package]]
 name = "pytest-jupyter-deploy"
-version = "0.2.6"
+version = "0.2.7"
 source = { editable = "libs/pytest-jupyter-deploy" }
 dependencies = [
     { name = "jupyter-deploy" },

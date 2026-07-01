@@ -55,6 +55,23 @@ deploys the published package). The ~30-min deploy is readable in its own job; t
 `test_deployment` verify then runs separately against the now-existing project. The job's
 `timeout-minutes` bounds the deploy.
 
+## Release ordering & gotchas
+
+Lessons from coordinated plugin/CLI/template releases — read before releasing:
+
+- **Release order for coupled changes: plugin → CLI → templates.** A template's
+  `manifest.yaml` can require CLI features (e.g. new component/health command schema);
+  the eks-oidc release gate installs the CLI *unpinned from prod PyPI*, so the CLI must
+  be published **first** or the gate's deploy fails at `jd config` with a manifest schema
+  error. There's no min-CLI-version check — the coupling is implicit.
+- **The CLI gate's `eks-functional-test` needs a live app #5 deployment.** Don't tear
+  app #5 down before a CLI release, or that job fails at restore. (App #5 is redeployed
+  by the eks-oidc gate, so there's a chicken-and-egg between the two gates — deploy app #5
+  before releasing the CLI.)
+- **Test PyPI re-publish is a safe no-op.** `uv publish --check-url` skips identical
+  files, so re-running a release gate from the same commit does NOT burn the version —
+  as long as the built artifact is byte-identical (don't change the package between runs).
+
 ## Testing Workflow Changes
 
 To iterate on E2E workflow changes, create a temporary push-triggered workflow:

@@ -52,8 +52,9 @@ resource "helm_release" "github_rbac" {
   chart            = "${path.module}/../charts/github-rbac"
   namespace        = var.workspace_shared_namespace
   create_namespace = false
-  # Uninstall can wait on RoleBinding teardown during a slow destroy; give it the
-  # same 600s headroom as the other CR-bearing releases (default is 5 min).
+  # Headroom over the 5-min provider default. No longer strictly necessary now
+  # that destroy_workspaces clears the CRs and the addon/node ordering keeps the
+  # operator alive through uninstall
   timeout = 600
 
   set = concat(
@@ -87,9 +88,10 @@ resource "helm_release" "workspace_defaults" {
   chart            = "${path.module}/../charts/workspace-defaults"
   namespace        = var.workspace_shared_namespace
   create_namespace = false
-  # Ships the jupyterlab WorkspaceTemplate (operator-finalized). Install AND
-  # uninstall wait on the operator reconciling/clearing it; the 5-min provider
-  # default can lag on a slow/contended cluster during a mass destroy.
+  # Ships the jupyterlab WorkspaceTemplate (operator-finalized). Install waits on
+  # the operator reconciling it. Uninstall is ~seconds now that destroy_workspaces
+  # clears the CRs first and the addon/node ordering keeps the operator alive, so
+  # this 600s (vs 5-min default) is no longer strictly necessary.
   timeout = 600
 
   set = concat([

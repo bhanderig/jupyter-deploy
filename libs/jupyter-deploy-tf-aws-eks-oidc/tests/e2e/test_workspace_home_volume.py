@@ -17,8 +17,10 @@ def test_home_volume_persists_across_restart(e2e_deployment: EndToEndDeployment,
     """Write a file, stop workspace, restart, verify file still exists."""
     name = e2e_workspace
 
-    # Write a sentinel file to the home volume
-    e2e_deployment.cli.run_command(
+    # Write a sentinel file to the home volume. The seeded workspace is only polled
+    # to "Running" (not exec-readiness), so this first exec can still race with a
+    # container that isn't accepting connections yet — retry on transient errors.
+    e2e_deployment.cli.run_exec_with_retry(
         [
             "jupyter-deploy",
             "server",
@@ -40,11 +42,10 @@ def test_home_volume_persists_across_restart(e2e_deployment: EndToEndDeployment,
     e2e_deployment.cli.poll_scoped_server_status(name, "Running", timeout_s=300)
     e2e_deployment.cli.wait_for_workspace_pod_exec_ready(name)
 
-    # Verify the sentinel file persisted
-    verify_file_exists_on_server(e2e_deployment, f"/home/jovyan/{SENTINEL_FILE}", name=name)
-
-    # Verify content
-    result = e2e_deployment.cli.run_command(
+    # Verify content persisted. Every exec below runs against a container that
+    # just restarted and can still flap ("container not found") even after the
+    # readiness gate above, so route them through run_exec_with_retry.
+    result = e2e_deployment.cli.run_exec_with_retry(
         [
             "jupyter-deploy",
             "server",
@@ -59,7 +60,7 @@ def test_home_volume_persists_across_restart(e2e_deployment: EndToEndDeployment,
     assert "persistence-ok" in result.stdout
 
     # Cleanup
-    e2e_deployment.cli.run_command(
+    e2e_deployment.cli.run_exec_with_retry(
         [
             "jupyter-deploy",
             "server",

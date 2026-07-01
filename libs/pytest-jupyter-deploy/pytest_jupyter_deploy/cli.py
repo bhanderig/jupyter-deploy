@@ -1,5 +1,6 @@
 """CLI wrapper for jupyter-deploy commands."""
 
+import logging
 import re
 import subprocess
 import time
@@ -11,6 +12,8 @@ import pexpect
 from jupyter_deploy import cmd_utils as jd_cmd_utils
 from jupyter_deploy import constants as jd_constants
 from jupyter_deploy.handlers.base_project_handler import retrieve_project_manifest
+
+logger = logging.getLogger(__name__)
 
 
 class JDCliError(RuntimeError):
@@ -239,6 +242,58 @@ class JDCli:
                 last_error = e
                 time.sleep(interval_s)
         raise TimeoutError(f"Exec not ready on '{name}' within {timeout_s}s (last error: {last_error})")
+
+    def run_exec_with_retry(
+        self,
+        cmd: list[str],
+        timeout_seconds: int | None = None,
+        capture_output: bool = True,
+        retries: int = 2,
+        interval_s: int = 10,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run a `server exec` command, retrying on transient container-readiness errors.
+
+        `wait_for_workspace_pod_exec_ready` only proves the pod accepted ONE exec;
+        a container can still flap immediately after (e.g. right after a stop/start
+        restart), so a subsequent raw exec races and fails with "container not
+        found" / "unable to upgrade connection". Any exec issued against a
+        workspace that may have just (re)started should go through this wrapper so
+        those transient errors are retried instead of failing the test. Non-transient
+        failures (real command errors) propagate immediately.
+
+        Args:
+            cmd: Command to run (a `jupyter-deploy server exec ...` invocation)
+            timeout_seconds: Per-attempt command timeout
+            capture_output: Whether to capture stdout/stderr
+            retries: Number of retries after the first attempt (so retries+1 attempts total)
+            interval_s: Seconds to wait between attempts
+
+        Returns:
+            CompletedProcess instance from the first successful attempt
+
+        Raises:
+            JDCliError: If the command fails with a non-transient error, or if only
+                transient errors occur across all attempts (the last one is re-raised)
+        """
+        last_error: JDCliError | None = None
+        for attempt in range(retries + 1):
+            try:
+                return self.run_command(cmd, timeout_seconds=timeout_seconds, capture_output=capture_output)
+            except JDCliError as e:
+                if not self._is_transient_exec_error(e):
+                    raise
+                last_error = e
+                if attempt < retries:
+                    logger.warning(
+                        "Transient exec error (attempt %d/%d), retrying in %ds: %s",
+                        attempt + 1,
+                        retries + 1,
+                        interval_s,
+                        e,
+                    )
+                    time.sleep(interval_s)
+        assert last_error is not None
+        raise last_error
 
     @classmethod
     def _is_transient_exec_error(cls, error: JDCliError) -> bool:

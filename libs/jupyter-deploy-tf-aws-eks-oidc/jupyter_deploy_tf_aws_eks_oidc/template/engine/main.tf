@@ -63,7 +63,7 @@ resource "random_id" "postfix" {
 
 locals {
   template_name    = "tf-aws-eks-oidc"
-  template_version = "0.1.1"
+  template_version = "0.1.2"
 
   default_tags = {
     Source       = "jupyter-deploy"
@@ -221,6 +221,15 @@ module "node_group" {
   max_size        = tonumber(each.value.max_size)
   desired_size    = tonumber(each.value.desired_size)
   combined_tags   = local.combined_tags
+
+  # The node-role policy attachments and VPC routing are already ordered via the
+  # references above (node_role.role_arn and vpc.private_subnet_ids, whose outputs
+  # depend_on their attachments/route tables). The DaemonSet addons are NOT in
+  # that closure — vpc-cni and kube-proxy only reference the cluster, so they are
+  # siblings of the node group and otherwise drain in the first destroy wave,
+  # killing pod networking on still-running nodes. Gate on core_node_addons so the
+  # nodes come up after, and tear down before, those addons (see eks_addons.tf).
+  depends_on = [null_resource.core_node_addons]
 }
 
 module "oauth_secret" {

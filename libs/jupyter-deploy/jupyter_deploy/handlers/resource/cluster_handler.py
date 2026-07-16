@@ -1,12 +1,10 @@
-from typing import Any
-
 from jupyter_deploy.engine.engine_outputs import EngineOutputsHandler
 from jupyter_deploy.engine.enum import EngineType
 from jupyter_deploy.engine.supervised_execution import DisplayManager
 from jupyter_deploy.engine.terraform import tf_outputs, tf_variables
 from jupyter_deploy.enum import StatusCategory
 from jupyter_deploy.handlers.base_project_handler import BaseProjectHandler
-from jupyter_deploy.handlers.payloads import HealthLayer, HealthLayerResult
+from jupyter_deploy.handlers.payloads import ClusterDetail, HealthLayer, HealthLayerResult
 from jupyter_deploy.handlers.resource.resource_utils import collect_results
 from jupyter_deploy.provider import manifest_command_runner as cmd_runner
 
@@ -99,9 +97,9 @@ class ClusterHandler(BaseProjectHandler):
     def health(self) -> HealthLayerResult:
         """Returns a HealthLayerResult for the cluster layer."""
         info = self.show_cluster()
-        cluster_label = info.get("label", "")
-        status = info.get("status", "")
-        version = info.get("version", "")
+        cluster_label = info.label
+        status = info.status
+        version = info.version
 
         detail = f"v{version}" if version else ""
 
@@ -132,8 +130,8 @@ class ClusterHandler(BaseProjectHandler):
             sub_component="-",
         )
 
-    def show_cluster(self) -> dict[str, Any]:
-        """Returns cluster metadata dict."""
+    def show_cluster(self) -> ClusterDetail:
+        """Returns cluster metadata."""
         command = self.project_manifest.get_command("cluster.show")
         runner = cmd_runner.ManifestCommandRunner(
             display_manager=self.display_manager,
@@ -141,4 +139,11 @@ class ClusterHandler(BaseProjectHandler):
             variable_handler=self._variable_handler,
         )
         runner.run_command_sequence(command, cli_paramdefs={})
-        return collect_results(runner, command)
+        results = collect_results(runner, command)
+        return ClusterDetail(
+            name=results.get("name", ""),
+            label=results.get("label", ""),
+            status=results.get("status", ""),
+            endpoint=results.get("endpoint", ""),
+            version=results.get("version", ""),
+        )

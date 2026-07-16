@@ -6,6 +6,7 @@ from jupyter_deploy.engine.supervised_execution import DisplayManager
 from jupyter_deploy.engine.terraform import tf_outputs, tf_variables
 from jupyter_deploy.exceptions import ResourceNameRequiredError
 from jupyter_deploy.handlers.base_project_handler import BaseProjectHandler
+from jupyter_deploy.handlers.payloads import HostDetail
 from jupyter_deploy.handlers.resource.resource_utils import collect_results
 from jupyter_deploy.provider import manifest_command_runner as cmd_runner
 from jupyter_deploy.provider.resolved_clidefs import (
@@ -75,7 +76,7 @@ class HostHandler(BaseProjectHandler):
         runner.run_command_sequence(command, cli_paramdefs=cli_paramdefs)
         return runner.get_result_value(command, "host.status", str)
 
-    def show_host(self, name: str) -> dict[str, Any]:
+    def show_host(self, name: str) -> HostDetail:
         """Returns detailed information about a host."""
         command = self.project_manifest.get_command("host.show")
         runner = cmd_runner.ManifestCommandRunner(
@@ -89,7 +90,12 @@ class HostHandler(BaseProjectHandler):
                 "name": StrResolvedCliParameter(parameter_name="name", value=name),
             },
         )
-        return collect_results(runner, command)
+        results = collect_results(runner, command)
+        return HostDetail(
+            name=results.get("name", ""),
+            status=results.get("status", ""),
+            resource=results.get("resource", {}),
+        )
 
     def _build_cli_paramdefs(self, name: str | None = None) -> dict[str, ResolvedCliParameter[Any]]:
         cli_paramdefs: dict[str, ResolvedCliParameter[Any]] = {}

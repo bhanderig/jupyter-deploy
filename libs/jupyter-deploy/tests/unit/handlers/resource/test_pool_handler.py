@@ -292,11 +292,7 @@ class TestPoolHandler(unittest.TestCase):
 
         mock_collect_results.return_value = {
             "name": "workspace-cpu",
-            "resource": {
-                "status": {
-                    "conditions": [{"type": "Ready", "status": "True"}]
-                }
-            },
+            "resource": {"status": {"conditions": [{"type": "Ready", "status": "True"}]}},
         }
 
         handler = PoolHandler(display_manager=NullDisplay())

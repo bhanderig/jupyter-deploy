@@ -1,0 +1,103 @@
+# NodePools define scheduling constraints and node lifecycle for Karpenter.
+# Routing pool: always-on, conservative consolidation, small instances.
+# Workspace pools: scale-to-zero, aggressive consolidation, diverse instances.
+# Both carry taints so only pods with matching tolerations can land here.
+#
+# Disruption budget: nodes: "1" (absolute, not percentage).
+# Karpenter applies the MINIMUM of all active budgets. A percentage budget
+# (e.g. 10%) rounds down to 0 on small pools (floor(0.1×1)=0), and
+# min(0,1)=0 — the absolute floor cannot raise a zero from the percentage.
+# Using only the absolute entry guarantees at least 1 node is always
+# disruptable, enabling scale-to-zero on workspace pools.
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: routing
+spec:
+  template:
+    metadata:
+      labels:
+        jupyter-deploy/role: routing
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: routing
+      taints:
+        - key: jupyter-deploy/role
+          value: routing
+          effect: NoSchedule
+      expireAfter: {{ .Values.expireAfter }}
+      requirements:
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: {{ .Values.routing.instanceCategories | toJson }}
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["{{ .Values.routing.instanceGenerationMin }}"]
+        - key: karpenter.k8s.aws/instance-size
+          operator: In
+          values: ["large", "xlarge", "2xlarge"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+  limits:
+    cpu: {{ .Values.routingLimitsCpu | quote }}
+    memory: {{ .Values.routingLimitsMemory | quote }}
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 120s
+    budgets:
+      - nodes: "1"
+{{- range .Values.workspaceNodepools }}
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: {{ .name }}
+spec:
+  template:
+    metadata:
+      labels:
+        jupyter-deploy/role: workspaces
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: {{ .name }}
+      taints:
+        - key: jupyter-deploy/role
+          value: workspaces
+          effect: NoSchedule
+      expireAfter: {{ $.Values.expireAfter }}
+      requirements:
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values: {{ .instanceFamilies | toJson }}
+        - key: karpenter.k8s.aws/instance-cpu
+          operator: In
+          values: ["2", "4", "8", "16", "32"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+  limits:
+    cpu: {{ .maxCpu | quote }}
+    memory: {{ .maxMemory | quote }}
+  disruption:
+    # WhenEmpty (not WhenEmptyOrUnderutilized): workspace pods carry no PDB and
+    # no karpenter.sh/do-not-disrupt annotation, so underutilized-consolidation
+    # would be free to evict a running notebook to bin-pack. Restricting to
+    # WhenEmpty means a node is only reclaimed once idle-shutdown has drained its
+    # last workspace pod — scale-to-zero still works, running notebooks are safe.
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 60s
+    budgets:
+      - nodes: "1"
+{{- end }}

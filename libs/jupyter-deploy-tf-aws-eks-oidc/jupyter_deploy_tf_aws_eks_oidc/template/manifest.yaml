@@ -154,6 +154,46 @@ commands:
   - result-name: cluster.loadbalancer.health.scheme
     source: result
     source-key: '[0].Scheme'
+- cmd: pool.list
+  sequence:
+  - api-name: k8s.custom.list-cluster
+    arguments:
+    - api-attribute: group
+      source: literal
+      value: karpenter.sh
+    - api-attribute: version
+      source: literal
+      value: v1
+    - api-attribute: plural
+      source: literal
+      value: nodepools
+  results:
+  - result-name: pool.list
+    source: result
+    source-key: '[0].Items'
+- cmd: pool.status
+  sequence:
+  - api-name: k8s.custom.get-cluster
+    arguments:
+    - api-attribute: group
+      source: literal
+      value: karpenter.sh
+    - api-attribute: version
+      source: literal
+      value: v1
+    - api-attribute: plural
+      source: literal
+      value: nodepools
+    - api-attribute: name
+      source: cli
+      source-key: name
+  results:
+  - result-name: pool.status.name
+    source: result
+    source-key: '[0].Name'
+  - result-name: pool.status.resource
+    source: result
+    source-key: '[0].Resource'
 - cmd: host.list
   sequence:
   - api-name: k8s.core.list-nodes
@@ -1225,6 +1265,42 @@ components:
     description: Default WorkspaceTemplate and access strategy chart
     resource-name: workspace-defaults
     scope: workspace_shared_namespace
+    verbs:
+      status:
+        method: helm.status
+      show:
+        method: helm.show
+      reconcile:
+        method: helm.reconcile
+  karpenter-chart:
+    type: HelmRelease
+    description: Karpenter node provisioner (routing + workspace NodePools)
+    resource-name: karpenter
+    scope: karpenter_namespace
+    verbs:
+      status:
+        method: helm.status
+      show:
+        method: helm.show
+      reconcile:
+        method: helm.reconcile
+  keda-chart:
+    type: HelmRelease
+    description: KEDA event-driven autoscaler (Prometheus-based scaling)
+    resource-name: keda
+    scope: keda_namespace
+    verbs:
+      status:
+        method: helm.status
+      show:
+        method: helm.show
+      reconcile:
+        method: helm.reconcile
+  prometheus-chart:
+    type: HelmRelease
+    description: Prometheus metrics server (powers KEDA scalers)
+    resource-name: prometheus
+    scope: monitoring_namespace
     verbs:
       status:
         method: helm.status

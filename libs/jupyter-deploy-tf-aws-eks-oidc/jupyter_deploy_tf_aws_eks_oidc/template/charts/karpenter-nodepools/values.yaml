@@ -1,0 +1,25 @@
+# Karpenter NodePools and EC2NodeClasses for jupyter-deploy.
+# All values are injected by platform_karpenter.tf — do not set manually.
+
+clusterName: ""
+nodeInstanceProfile: ""
+
+# Node expiry — forces periodic node rotation to prevent config drift.
+expireAfter: "504h"
+
+# ── Routing NodePool ──────────────────────────────────────────────────────────
+routing:
+  instanceCategories: ["c", "m"]
+  instanceGenerationMin: "5"
+  blockDevice:
+    deviceName: /dev/xvda
+    volumeSizeGi: 50
+    volumeType: gp3
+
+routingLimitsCpu: "32"
+routingLimitsMemory: "128Gi"
+
+# ── Workspace NodePools ───────────────────────────────────────────────────────
+# Each entry creates one NodePool + EC2NodeClass pair.
+# Injected by platform_karpenter.tf from var.workspace_nodepools.
+workspaceNodepools: []

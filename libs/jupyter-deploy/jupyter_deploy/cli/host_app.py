@@ -248,7 +248,7 @@ def list_hosts(
 
         if result:
             for name in result:
-                console.print(f"[bold cyan]{name}[/]")
+                console.print(f"  [bold cyan]{name}[/]")
         else:
             console.print("[bold cyan]None[/]")
 

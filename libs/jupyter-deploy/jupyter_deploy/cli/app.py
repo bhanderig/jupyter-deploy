@@ -18,6 +18,7 @@ from jupyter_deploy.cli.history_app import history_app
 from jupyter_deploy.cli.host_app import host_app
 from jupyter_deploy.cli.image_app import image_app
 from jupyter_deploy.cli.organization_app import organization_app
+from jupyter_deploy.cli.pool_app import pool_app
 from jupyter_deploy.cli.progress_display import ProgressDisplayManager
 from jupyter_deploy.cli.projects_app import projects_app
 from jupyter_deploy.cli.servers_app import servers_app
@@ -74,6 +75,7 @@ class JupyterDeployCliRunner:
         self.app.add_typer(component_app, name="component")
         self.app.add_typer(host_app, name="host")
         self.app.add_typer(cluster_app, name="cluster")
+        self.app.add_typer(pool_app, name="pool")
         self.app.add_typer(history_app, name="history")
         self.app.add_typer(projects_app, name="projects")
 

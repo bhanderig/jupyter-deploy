@@ -38,7 +38,10 @@ class HostHandler(BaseProjectHandler):
             raise NotImplementedError(f"OutputsHandler implementation not found for engine: {self.engine}")
 
     def list_hosts(
-        self, query: str, limit: int | None = None, continue_from: str | None = None
+        self,
+        query: str,
+        limit: int | None = None,
+        continue_from: str | None = None,
     ) -> tuple[list[str], str | None]:
         """Returns a list of host names and an optional continuation token."""
         command = self.project_manifest.get_command("host.list")

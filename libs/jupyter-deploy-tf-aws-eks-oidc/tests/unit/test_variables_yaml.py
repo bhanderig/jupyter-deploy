@@ -198,22 +198,38 @@ class TestVariablesYaml(unittest.TestCase):
         missing = preset_vars - set(commented_vars.keys())
         self.assertEqual(len(missing), 0, f"Preset variables missing from commented overrides: {missing}")
 
-    # The VPC module hardcodes 2 AZs (modules/vpc/main.tf: slice(..., 0, 2)). If that
-    # ever changes, bump this constant to match.
-    _AZ_COUNT = 2
+    def test_karpenter_workspace_nodepools_set_in_preset(self) -> None:
+        """workspace_nodepools must be set in the preset with required keys.
 
-    def test_workspaces_min_size_covers_all_azs(self) -> None:
-        """workspaces min_size must be >= AZ count so Cluster Autoscaler's scale-down floor
-        keeps one node per AZ — otherwise an idle scale-down can strand a workspace whose
-        EBS volume lives in an AZ with no node (the #300 AZ-stranding regression)."""
-        node_groups = self.DEFAULTS_ALL_TFVARS["node_groups"]
-        workspaces = next((ng for ng in node_groups if ng["role"] == "workspaces"), None)
-        self.assertIsNotNone(workspaces, "expected a node group with role 'workspaces' in the preset")
-        min_size = int(workspaces["min_size"])
-        self.assertGreaterEqual(
-            min_size,
-            self._AZ_COUNT,
-            f"workspaces min_size ({min_size}) must be >= AZ count ({self._AZ_COUNT}) to avoid AZ-stranding",
+        Karpenter replaces the old workspaces MNG. workspace_nodepools is a
+        list(map(string)) — each entry defines one NodePool + EC2NodeClass pair.
+        """
+        self.assertIn(
+            "workspace_nodepools", self.DEFAULTS_ALL_TFVARS, "workspace_nodepools must be set in defaults-all.tfvars"
+        )
+        nodepools = self.DEFAULTS_ALL_TFVARS["workspace_nodepools"]
+        self.assertIsInstance(nodepools, list, "workspace_nodepools must be a list")
+        self.assertGreaterEqual(len(nodepools), 1, "workspace_nodepools must have at least one entry")
+
+        required_keys = {"name", "instance_families", "disk_size_gb", "max_cpu", "max_memory"}
+        for pool in nodepools:
+            missing = required_keys - set(pool.keys())
+            self.assertEqual(len(missing), 0, f"workspace_nodepools entry missing keys: {missing}")
+            # disk_size_gb must be a numeric string
+            self.assertTrue(
+                pool["disk_size_gb"].isdigit(),
+                f"disk_size_gb must be a numeric string, got: {pool['disk_size_gb']}",
+            )
+
+        self.assertIn(
+            "routing_instance_categories",
+            self.DEFAULTS_ALL_TFVARS,
+            "routing_instance_categories must be set in defaults-all.tfvars",
+        )
+        self.assertIn(
+            "node_expire_after",
+            self.DEFAULTS_ALL_TFVARS,
+            "node_expire_after must be set in defaults-all.tfvars",
         )
 
     @classmethod

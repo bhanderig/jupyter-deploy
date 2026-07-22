@@ -32,25 +32,30 @@ workspace_app_jupyterlab_app_type        = "jupyterlab"
 workspace_app_jupyterlab_image_name      = "jupyterlab-v0.1.0"
 workspace_app_jupyterlab_image_build     = "v1"
 
-node_groups = [
+platform_instance_types = ["m5.large"]
+platform_disk_size_gb   = 50
+platform_min_size       = 2
+platform_max_size       = 3
+
+karpenter_version  = "1.3.8"
+keda_version       = "2.16.1"
+prometheus_version = "27.0.0"
+
+routing_max_cpu    = "32"
+routing_max_memory = "128Gi"
+
+node_expire_after = "504h"
+
+routing_instance_categories     = ["c", "m"]
+routing_instance_generation_min = "5"
+routing_disk_size_gb            = 50
+
+workspace_nodepools = [
   {
-    name          = "components"
-    role          = "components"
-    instance_type = "t3.medium"
-    ami_type      = "default"
-    disk_size_gb  = "50"
-    min_size      = "1"
-    max_size      = "3"
-    desired_size  = "2"
-  },
-  {
-    name          = "workspaces"
-    role          = "workspaces"
-    instance_type = "c5.2xlarge"
-    ami_type      = "default"
-    disk_size_gb  = "50"
-    min_size      = "2"
-    max_size      = "5"
-    desired_size  = "2"
+    name              = "workspace-cpu"
+    instance_families = "c6i,m6i,r6i,c7i,m7i,r7i"
+    disk_size_gb      = "50"
+    max_cpu           = "512"
+    max_memory        = "2048Gi"
   }
 ]

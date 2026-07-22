@@ -80,6 +80,16 @@ Code: `./libs/jupyter-deploy-tf-aws-eks-oidc`
 - cloud provider: `aws`
 - identity provider: `github` (via Dex OIDC)
 
+### Terraform file structure
+
+The engine directory has three tiers — keep them separate:
+
+1. **Core infra** (`modules/`, `main.tf`, `iam.tf`, `eks_addons.tf`, `platform.tf`): VPC, IAM roles, EKS cluster, MNG, security groups. Use `modules/` for reusable resources. These must exist before a kubeconfig is available.
+2. **Platform components** (`platform_*.tf`): Helm charts deployed onto the cluster once a working MNG is available — one file per component, named `platform_<component>.tf` (e.g. `platform_karpenter.tf`, `platform_keda.tf`, `platform_logging.tf`). Never put Helm releases in `modules/`.
+3. **App/charts** (`helm.tf`, `workspaces.tf`): consumer charts and workspace-specific resources (operator, router, workspace-defaults).
+
+All variables MUST be defined in `variables.tf`. Default values MUST be in `presets/defaults-all.tfvars`. No `variable` blocks elsewhere.
+
 All `local-exec` provisioners MUST set `interpreter = ["/bin/bash", "-c"]` — Terraform defaults to `/bin/sh`.
 With `bootstrap_cluster_creator_admin_permissions = false`, the caller's IAM role MUST be listed in `admin_role_names` to retain cluster access. A `check` block validates this at plan time.
 Destroy order is load-bearing and enforced via `depends_on` (see `eks_addons.tf`/`iam_role`/`vpc` comments): VPC+roles → DaemonSet addons (CNI/kube-proxy) → node groups → Deployment addons (coredns/ebs-csi/…) → Helm releases → workspaces, so the operator stays alive through Helm uninstalls.
@@ -248,6 +258,25 @@ Never interrupt, kill, cancel, or time out an in-progress `jd up`/`jd down` (or 
 underlying `terraform` process). A full EKS deploy/destroy can take 20-30 minutes;
 run it in the background and wait for it to finish rather than aborting. Interrupting
 an apply mid-run is how partial/duplicate deployments and orphaned resources happen.
+
+**IMPORTANT: The correct resume sequence after a failed `jd up` is `jd config` THEN `jd up`.**
+Never run `jd up` alone to resume a failed deployment — it will use the stale plan from
+the previous run and either fail with "Saved plan is stale" or, worse, create duplicate
+infrastructure by treating the existing partial state as a fresh deployment. Always
+regenerate the plan with `jd config` first so Terraform re-evaluates against the current
+remote state, then apply with `jd up`.
+
+**IMPORTANT: Before retrying `jd up` after a mid-apply failure, check for stuck Helm releases.**
+A failed apply can leave Helm releases in `pending-install` or `failed` state. These block
+the next apply with "cannot re-use a name that is still in use". Check with:
+`helm list -A | grep -E "pending|failed"`
+and uninstall any stuck releases before running `jd config && jd up`.
+
+**IMPORTANT: `jd down` on EKS clusters requires the correct kubeconfig.**
+Before running `jd down`, ensure kubectl is configured for the cluster being destroyed:
+`aws eks update-kubeconfig --name <cluster-name> --region <region>`
+Without this, the pre-destroy cleanup script cannot reach the cluster to uninstall Karpenter,
+causing the destroy to fail with "unable to uninstall Helm release karpenter".
 
 **IMPORTANT:** `jd up` automatically backs up the project (files + terraform state) to
 the remote store (an S3 bucket) after a full run — **even if the run ends in failure.**

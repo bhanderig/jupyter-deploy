@@ -129,98 +129,204 @@ variable "oauth_allowed_teams" {
   }
 }
 
-variable "node_groups" {
+variable "platform_instance_types" {
   description = <<-EOT
-    List of EKS managed node groups to create.
+    EC2 instance types for the platform managed node group.
 
-    Keys: name, role, instance_type, disk_size_gb, min_size, max_size, desired_size, ami_type (optional).
+    Hosts control-plane-only pods: Karpenter, KEDA, operator, CoreDNS, cert-manager.
+    Routing and workspace pods run on Karpenter-managed NodePools.
+    Providing multiple types improves availability when one type is unavailable.
 
-    Each node group has a role that determines which pods are scheduled on it:
-    - "components": cluster infrastructure pods (operator, router, cert-manager)
-    - "workspaces": user workspace pods
+    Recommended: ["m5.large"]
+  EOT
+  type        = list(string)
+}
 
-    Nodes are labeled with 'jupyter-deploy/role' matching their role, and
-    pod affinity rules schedule pods to the appropriate node group.
+variable "platform_disk_size_gb" {
+  description = <<-EOT
+    Root disk size in GiB for platform managed node group instances.
 
-    Node groups span multiple AZs. Because EBS volumes are AZ-locked, a workspace
-    whose volume lives in one AZ can only be scheduled onto a node in that same AZ.
-    Cluster Autoscaler (platform_cluster_autoscaler.tf) scales every node group within
-    its min/max on pending pods. Keep the workspaces min_size >= the AZ count (2) so a
-    node always exists per AZ even at the scale-down floor; a single node can strand a
-    workspace in the other AZ.
+    Recommended: 50
+  EOT
+  type        = number
 
-    The ami_type key controls the EKS-optimized AMI. Set to "default" (or omit)
-    to auto-detect from instance capabilities:
-    - CPU x86_64 instances -> AL2023_x86_64_STANDARD
-    - CPU arm64 instances  -> AL2023_ARM_64_STANDARD
-    - GPU x86_64 instances -> AL2023_x86_64_NVIDIA
-    - Neuron instances     -> AL2023_x86_64_NEURON
+  validation {
+    condition     = var.platform_disk_size_gb >= 20 && var.platform_disk_size_gb <= 16384
+    error_message = "platform_disk_size_gb must be between 20 and 16384."
+  }
+}
 
-    Or set an explicit EKS ami_type value (e.g. "BOTTLEROCKET_x86_64").
+variable "platform_min_size" {
+  description = <<-EOT
+    Minimum number of nodes in the platform managed node group.
 
-    Example: [
-      {
-        name          = "components"
-        role          = "components"
-        instance_type = "t3.medium"
-        ami_type      = "default"
-        disk_size_gb  = "50"
-        min_size      = "1"
-        max_size      = "3"
-        desired_size  = "2"
-      },
-      {
-        name          = "workspaces"
-        role          = "workspaces"
-        instance_type = "g5.xlarge"
-        ami_type      = "default"
-        disk_size_gb  = "100"
-        min_size      = "0"
-        max_size      = "5"
-        desired_size  = "0"
-      }
-    ]
+    Must be >= 2 for HA across AZs (one node per AZ).
+
+    Recommended: 2
+  EOT
+  type        = number
+
+  validation {
+    condition     = var.platform_min_size >= 2
+    error_message = "platform_min_size must be >= 2 for HA across AZs."
+  }
+}
+
+variable "platform_max_size" {
+  description = <<-EOT
+    Maximum number of nodes in the platform managed node group.
+
+    Must be >= platform_min_size (>= 2).
+
+    Recommended: 3
+  EOT
+  type        = number
+
+  validation {
+    condition     = var.platform_max_size >= 2
+    error_message = "platform_max_size must be >= 2 (>= platform_min_size)."
+  }
+
+}
+
+variable "karpenter_version" {
+  description = <<-EOT
+    Version of the Karpenter Helm chart to install.
+
+    Refer to: https://github.com/aws/karpenter-provider-aws/releases
+
+    Recommended: 1.3.3
+  EOT
+  type        = string
+}
+
+variable "keda_version" {
+  description = <<-EOT
+    Version of the KEDA Helm chart to install.
+
+    Refer to: https://github.com/kedacore/charts/releases
+
+    Recommended: 2.16.1
+  EOT
+  type        = string
+}
+
+variable "prometheus_version" {
+  description = <<-EOT
+    Version of the Prometheus Helm chart to install.
+
+    Prometheus powers the KEDA scalers for Traefik (open connections),
+    authmiddleware (request rate), and web-app (request rate).
+
+    Refer to: https://github.com/prometheus-community/helm-charts/releases
+
+    Recommended: 27.0.0
+  EOT
+  type        = string
+}
+
+variable "routing_max_cpu" {
+  description = <<-EOT
+    Max vCPU the routing node pool can provision across all routing nodes (e.g. "32").
+
+    Routing pods are small (100m-500m CPU each). Set based on expected peak routing load.
+
+    Recommended: 32
+  EOT
+  type        = string
+}
+
+variable "routing_max_memory" {
+  description = <<-EOT
+    Max memory the routing node pool can provision across all routing nodes (e.g. "128Gi").
+
+    Recommended: 128Gi
+  EOT
+  type        = string
+}
+
+variable "workspace_nodepools" {
+  description = <<-EOT
+    List of workspace Karpenter NodePool definitions. Each entry creates one
+    NodePool + EC2NodeClass pair. Supports multiple pools (e.g. CPU + GPU).
+
+    Required keys per entry (all strings):
+      name              - NodePool and EC2NodeClass name (e.g. "workspace-cpu")
+      instance_families - comma-separated EC2 instance families (e.g. "c6i,m6i,r6i,c7i,m7i,r7i")
+      disk_size_gb      - root volume size in GiB as a string (e.g. "50")
+      max_cpu           - fleet CPU ceiling (e.g. "512")
+      max_memory        - fleet memory ceiling (e.g. "2048Gi")
+
+    Example (add a GPU pool by appending an entry):
+      workspace_nodepools = [
+        { name = "workspace-cpu", instance_families = "c6i,m6i,r6i", disk_size_gb = "50", max_cpu = "512", max_memory = "2048Gi" },
+        { name = "workspace-gpu", instance_families = "g4dn,g5", disk_size_gb = "100", max_cpu = "64", max_memory = "256Gi" },
+      ]
   EOT
   type        = list(map(string))
 
   validation {
-    condition     = length(var.node_groups) == length(distinct([for ng in var.node_groups : ng.name]))
-    error_message = "Node group names must be unique."
+    condition     = length(var.workspace_nodepools) >= 1
+    error_message = "workspace_nodepools must contain at least one NodePool definition."
   }
 
   validation {
     condition = alltrue([
-      for ng in var.node_groups :
-      can(tonumber(ng.min_size)) && tonumber(ng.min_size) >= 0 && tonumber(ng.min_size) <= 450
+      for p in var.workspace_nodepools :
+      can(tonumber(p["disk_size_gb"])) &&
+      tonumber(p["disk_size_gb"]) >= 20 &&
+      tonumber(p["disk_size_gb"]) <= 16384
     ])
-    error_message = "min_size must be an integer between 0 and 450."
+    error_message = "Each workspace NodePool disk_size_gb must be a numeric string between 20 and 16384."
   }
+}
+
+variable "routing_instance_categories" {
+  description = <<-EOT
+    EC2 instance categories (karpenter.k8s.aws/instance-category) for routing nodes.
+
+    Combined with routing_instance_generation_min to select instances automatically
+    across generations.
+
+    Recommended: ["c", "m"]
+  EOT
+  type        = list(string)
+}
+
+variable "routing_instance_generation_min" {
+  description = <<-EOT
+    Minimum EC2 instance generation (exclusive) for routing nodes.
+
+    Recommended: "5"
+  EOT
+  type        = string
+}
+
+variable "routing_disk_size_gb" {
+  description = <<-EOT
+    Root disk size in GiB for routing Karpenter-provisioned nodes.
+
+    Recommended: 50
+  EOT
+  type        = number
 
   validation {
-    condition = alltrue([
-      for ng in var.node_groups :
-      can(tonumber(ng.max_size)) && tonumber(ng.max_size) >= 1 && tonumber(ng.max_size) <= 450
-    ])
-    error_message = "max_size must be an integer between 1 and 450."
+    condition     = var.routing_disk_size_gb >= 20 && var.routing_disk_size_gb <= 16384
+    error_message = "routing_disk_size_gb must be between 20 and 16384."
   }
+}
 
-  validation {
-    condition = alltrue([
-      for ng in var.node_groups :
-      can(tonumber(ng.min_size)) && can(tonumber(ng.max_size)) && can(tonumber(ng.desired_size)) &&
-      tonumber(ng.min_size) <= tonumber(ng.desired_size) &&
-      tonumber(ng.desired_size) <= tonumber(ng.max_size)
-    ])
-    error_message = "Each node group must satisfy: min_size <= desired_size <= max_size."
-  }
+variable "node_expire_after" {
+  description = <<-EOT
+    Duration after which Karpenter-provisioned nodes are force-rotated.
 
-  validation {
-    condition = alltrue([
-      for ng in var.node_groups :
-      can(tonumber(ng.disk_size_gb)) && tonumber(ng.disk_size_gb) >= 1 && tonumber(ng.disk_size_gb) <= 16384
-    ])
-    error_message = "disk_size_gb must be an integer between 1 and 16384."
-  }
+    Periodic rotation prevents config drift on long-running nodes. Karpenter
+    respects pod disruption budgets during rotation — running workspaces are
+    not evicted until a replacement node is ready.
+
+    Recommended: "504h" (21 days)
+  EOT
+  type        = string
 }
 
 variable "workspace_rbac_namespaces" {

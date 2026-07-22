@@ -68,6 +68,15 @@ server-status-rules:
   all:
   - path: .status.conditions[type=Available].status
     equals: "True"
+pool-status-rules:
+- display: Ready
+  all:
+  - path: .status.conditions[type=Ready].status
+    equals: "True"
+- display: NotReady
+  all:
+  - path: .status.conditions[type=Ready].status
+    equals: "False"
 images:
   jupyterlab:
     description: JupyterLab workspace image

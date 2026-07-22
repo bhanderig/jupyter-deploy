@@ -1,4 +1,5 @@
 import json
+from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated
 
@@ -71,10 +72,10 @@ def show(
             details = handler.show_pool(name=name)
 
         if json_output:
-            console.print(json.dumps(details), highlight=False, markup=False, soft_wrap=True)
+            console.print(json.dumps(asdict(details)), highlight=False, markup=False, soft_wrap=True)
             return
 
-        console.print_json(json.dumps(details))
+        console.print_json(json.dumps(asdict(details)))
 
 
 @pool_app.command()
@@ -96,12 +97,6 @@ def status(
         handler = pool_handler.PoolHandler(display_manager=simple_display_manager)
 
         with simple_display_manager.spinner(f"Checking status for pool {name}..."):
-            details = handler.show_pool(name=name)
+            pool_status = handler.get_status(name=name)
 
-        resource = details.get("resource", {})
-        conditions = resource.get("status", {}).get("conditions", [])
-        ready = next(
-            (c.get("status", "Unknown") for c in conditions if c.get("type") == "Ready"),
-            "Unknown",
-        )
-        console.print(f"Pool status: [bold cyan]{ready}[/]")
+        console.print(f"Pool status: [bold cyan]{pool_status}[/]")

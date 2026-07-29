@@ -796,7 +796,13 @@ ci-e2e-eks-deploy project_dir="sandbox-e2e" ci_dir="sandbox-ci":
     envsubst < "$EKS_CONFIG" > "{{project_dir}}/variables.yaml"
 
     echo "=== jd config ==="
-    $EXEC ". .venv/bin/activate && cd /workspace/{{project_dir}} && jupyter-deploy config -v"
+    # --reset wipes any recorded variable values so config re-resolves everything
+    # from the freshly-rendered variables.yaml + current template presets. Without
+    # this, a stale recorded chart-version (e.g. operator 0.1.2 from an older run
+    # persisted in the project store) would be reused instead of the current pin,
+    # deploying the wrong operator. All required + required_sensitive vars are
+    # supplied by the rendered variables.yaml above, so --reset never re-prompts.
+    $EXEC ". .venv/bin/activate && cd /workspace/{{project_dir}} && jupyter-deploy config -v --reset"
     echo "=== jd up ==="
     $EXEC ". .venv/bin/activate && cd /workspace/{{project_dir}} && jupyter-deploy up -y -v"
     echo "✓ EKS deployment complete"
